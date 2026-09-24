@@ -1,0 +1,14 @@
+# 泵房数字孪生 · ① 传感器与设备模拟 / ② 协议解析 两个角色的依赖
+#
+# ⚠️ 版本必须锁死，不要用 pip install pymodbus 装最新版！
+#
+# 原因：pymodbus 3.10 之后数据存储层正在向 4.0 迁移，
+#       3.15 里 ModbusSlaveContext / ModbusSequentialDataBlock 已废弃，
+#       且 getValues / setValues 被移除（改名为 async_OLD_getValues），
+#       拿它写动态模拟器会直接报错。
+#       3.6.9 的经典 API 完整可用，也是网上绝大多数教程用的写法。
+#
+# 安装：
+#     pip install -r requirements.txt
+
+pymodbus==3.6.9
