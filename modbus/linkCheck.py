@@ -117,13 +117,20 @@ def main():
 
     # ---------- 3. 数据确实在变 ----------
     print("\n[3/5] 上行：数据是否在持续变化（说明模拟器在推进）")
-    before = readTag(client, config, "tank_level")
+    # 同时看好几个测点：只盯液位的话，液位顶到水箱上限（进水阀已关、泵又没开）
+    # 就会纹丝不动，被误判成"模拟器没在跑"。
+    watchTags = ["tank_level", "pipe_pressure", "valve_inlet_opening", "today_kwh"]
+    beforeTags = readAllTags(client, config) or {}
     time.sleep(3.0)
-    after = readTag(client, config, "tank_level")
-    changed = before is not None and after is not None and abs(after - before) > 0.05
-    results.append(check("3 秒后液位有变化", changed,
-                         "%.1f → %.1f" % (before, after) if changed
-                         else "无变化，模拟器可能没在跑"))
+    afterTags = readAllTags(client, config) or {}
+    changedTags = [
+        tag for tag in watchTags
+        if beforeTags.get(tag) is not None and afterTags.get(tag) is not None
+        and abs(afterTags[tag] - beforeTags[tag]) > 1e-6
+    ]
+    results.append(check("3 秒后至少有一个测点在变化", bool(changedTags),
+                         "变化的是：%s" % "、".join(changedTags) if changedTags
+                         else "全都没变，模拟器可能没在跑"))
 
     # ---------- 4. 下行：控制指令 ----------
     print("\n[4/5] 下行：写线圈指令，模拟器是否真的执行")

@@ -83,7 +83,9 @@ python protocolParser.py --once     # 只读一次就退出，最快验证链路
 >
 > 因此 `sensorSim.py` 里的 `KWH_INITIAL = 12.6` 给了个起始基数（12.6 取自《接口规范》5.2 节示例）。不给基数的话，泵跑几秒才 0.004 度，演示时看着不真实。
 >
-> **待办**：需 PM 把 PRD §9 的这条待决策标记为「已决策：改由模拟器（电度表）提供」，两处文档才算对齐。
+> **每日 00:00 归零由模拟器负责**（`checkDayRollover()`）：日期一变就把今日耗电量清零重新累计，对齐真实电度表的行为。
+>
+> **文档状态**：PRD §9 第 5 条已于 2026-09-24 定案（PRD 已升 v1.2），两处文档现已一致，不再有矛盾。
 
 **2. `40016~40019` 是故意留空的**
 
@@ -121,6 +123,7 @@ python protocolParser.py --once     # 只读一次就退出，最快验证链路
 
 | 现象 | 原因与解决 |
 |---|---|
+| 数据看着前后矛盾（一会儿 80cm 一会儿 140cm） | **同时开了两个 `sensorSim.py`**。Windows 允许第二个进程也绑定同一端口，两个进程轮流占用，谁响应不确定。按 `Ctrl+Shift+Esc` 打开任务管理器 → 「详细信息」→ 把多出来的 `python.exe` 结束掉（**别用 `taskkill /IM python.exe /F`，那会把你机器上所有 python 程序一起杀掉**），然后只开一个 |
 | `端口绑定失败` | 502 端口被占用。把 `pointTable.json` 里的 `port` 改成 `5020`，`protocolParser.py` 用同一份配置会自动跟着改 |
 | 窗口 2 报「连不上」 | 窗口 1 的模拟器没启动，或两边端口不一致 |
 | `ModuleNotFoundError: pymodbus` | 没装依赖，跑 `pip install -r requirements.txt` |

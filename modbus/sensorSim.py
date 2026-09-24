@@ -234,6 +234,7 @@ def createInitialState(config):
         "pumpSetpoint": [DEFAULT_SETPOINT_HZ, DEFAULT_SETPOINT_HZ],  # 目标频率
         "pumpTemp": [26.0, 26.0],  # 电机温度 ℃
         "kwh": KWH_INITIAL,       # 今日耗电量（带基数，见 KWH_INITIAL 说明）
+        "todayDate": time.strftime("%Y-%m-%d"),   # 当前日期，用于跨天归零
         "mode": 0,                # 0=手动 1=自动
         "lowLevelTimer": 0.0,     # 低液位持续时间，用于 30 秒防抖
         "valveOpening": 100.0,    # 进水阀开度 %
@@ -342,6 +343,31 @@ def checkInterlock(state, deltaTime):
     return []
 
 
+def checkDayRollover(state, todayText=None):
+    """跨天检测：日期变了就把今日耗电量归零。
+
+    真实电度表的「今日耗电」在每天 00:00 清零重新累计，模拟器要对齐这个行为，
+    否则跑过午夜后会一直累加上去，与「今日」这个语义不符。
+
+    Args:
+        state: 模拟器内部状态（会被就地修改）。
+        todayText: 当前日期文本，格式 YYYY-MM-DD。默认取系统当天，
+                   显式传入是为了能在测试里模拟跨天，不用等到半夜。
+
+    Returns:
+        list[str]: 发生跨天时返回一条说明，未跨天返回空列表。
+    """
+    if todayText is None:
+        todayText = time.strftime("%Y-%m-%d")
+    if state["todayDate"] == todayText:
+        return []
+
+    dayBefore = state["todayDate"]
+    state["todayDate"] = todayText
+    state["kwh"] = 0.0
+    return ["日期 %s → %s，今日耗电量已归零" % (dayBefore, todayText)]
+
+
 def stepPhysics(state, deltaTime, config):
     """推进一帧水力/电机物理量。
 
@@ -371,6 +397,16 @@ def stepPhysics(state, deltaTime, config):
         else:
             state["pumpFreq"][pumpIndex] = current + (step if target > current else -step)
         state["pumpFreq"][pumpIndex] = max(0.0, min(50.0, state["pumpFreq"][pumpIndex]))
+
+    # 进水阀位控制：液位升到高限自动关阀，降到回差线以下再开。
+    # 真实泵房不会一直灌水灌到溢流——液位到上限就该停止进水了。
+    # 这里用 20cm 回差（140 关、120 开），避免在阈值上频繁开合。
+    if state["level"] >= LEVEL_HIGH:
+        if state["valveOpening"] > 0:
+            state["valveOpening"] = 0.0
+    elif state["level"] <= LEVEL_HIGH - 20.0:
+        if state["valveOpening"] < 100:
+            state["valveOpening"] = 100.0
 
     # 液位
     inflow = INFLOW_CM_PER_SEC * (state["valveOpening"] / 100.0)
@@ -412,8 +448,15 @@ def publishValues(context, state, config):
     Returns:
         None
     """
+    # 液位读数加一点点测量噪声：真实传感器的输出本来就会轻微跳动，
+    # 而且系统静止时（进水阀已关、泵又没开）数值完全不动，会被误判成"模拟器卡死"。
+    # 幅度取 ±0.2cm：真实投入式液位变送器精度在 ±1cm 量级，这个抖动完全合理，
+    # 又足以保证 0.1cm 的显示分辨率下每次读数都不同。
+    levelReading = state["level"] + random.uniform(-0.20, 0.20)
+    levelReading = max(0.0, min(150.0, levelReading))
+
     values = {
-        "tank_level": state["level"],
+        "tank_level": round(levelReading, 1),
         "pipe_pressure": state["pressure"],
         "pump_01_status": state["pumpStatus"][0],
         "pump_01_freq": state["pumpFreq"][0],
@@ -519,6 +562,9 @@ async def simulationLoop(context, config):
 
         for action in checkInterlock(state, tickSeconds):
             print("  [联锁] %s" % action)
+
+        for action in checkDayRollover(state):
+            print("  [日切] %s" % action)
 
         readSetpoints(context, state, config)
         stepPhysics(state, tickSeconds, config)
