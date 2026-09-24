@@ -21,7 +21,13 @@ import time
 
 from pymodbus.client import ModbusTcpClient
 
-from protocolParser import buildPayload, getDataHoldings, loadConfig, readAllTags
+from protocolParser import (
+    buildPayload,
+    getDataHoldings,
+    loadConfig,
+    readAllTags,
+    writeCoil,
+)
 
 FC_COIL = 1
 WAIT_AFTER_COMMAND_SEC = 4.0   # 等模拟器把频率升上去
@@ -41,29 +47,6 @@ def check(title, condition, detail=""):
     mark = "✅" if condition else "❌"
     print("  %s %s%s" % (mark, title, ("  —— " + detail) if detail else ""))
     return bool(condition)
-
-
-def writeCoil(client, config, tag, value):
-    """按标签名写一个线圈。
-
-    Args:
-        client: ModbusTcpClient。
-        config: 点表配置。
-        tag: 线圈标签名，如 pump_01_cmd_start。
-        value: True 写 1，False 写 0。
-
-    Returns:
-        bool: 写入是否成功。
-    """
-    coil = next((item for item in config["coils"] if item.get("tag") == tag), None)
-    if coil is None:
-        return False
-    response = client.write_coil(
-        address=coil["offset"],
-        value=value,
-        slave=config["connection"]["deviceId"],
-    )
-    return not response.isError()
 
 
 def readTag(client, config, tag):

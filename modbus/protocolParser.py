@@ -171,6 +171,79 @@ def readAllTags(client, config):
     return tags
 
 
+def writeCoil(client, config, tag, value):
+    """按标签名写一个线圈，用于把后端下发的控制指令传给模拟器。
+
+    对应《接口规范》第八节控制时序的第 6 步：「后端通过协议解析写 Modbus 线圈」。
+
+    Args:
+        client: 已连接的 ModbusTcpClient。
+        config: 点表配置。
+        tag: 线圈标签名，如 pump_01_cmd_start。
+        value: True 写 1，False 写 0。
+
+    Returns:
+        bool: True 表示写入成功。
+    """
+    coil = next((item for item in config["coils"] if item.get("tag") == tag), None)
+    if coil is None:
+        return False
+    response = client.write_coil(
+        address=coil["offset"],
+        value=value,
+        slave=config["connection"]["deviceId"],
+    )
+    return not response.isError()
+
+
+def writeSetpoint(client, config, pumpIndex, frequencyHz):
+    """写某台泵的频率给定值（40020 / 40021），实现变频调速。
+
+    Args:
+        client: 已连接的 ModbusTcpClient。
+        config: 点表配置。
+        pumpIndex: 0 表示 1# 泵，1 表示 2# 泵。
+        frequencyHz: 目标频率，0~50。
+
+    Returns:
+        bool: True 表示写入成功。
+    """
+    tag = "pump_0%d_freq_setpoint" % (pumpIndex + 1)
+    spec = next((item for item in config["holdings"] if item.get("tag") == tag), None)
+    if spec is None:
+        return False
+    frequencyHz = max(0.0, min(50.0, float(frequencyHz)))
+    registerValue = int(round(frequencyHz * spec.get("scale", 1)))
+    response = client.write_register(
+        address=spec["offset"],
+        value=registerValue,
+        slave=config["connection"]["deviceId"],
+    )
+    return not response.isError()
+
+
+def readSetpoint(client, config, pumpIndex):
+    """读某台泵当前的频率给定值，用于前端回显。
+
+    Args:
+        client: 已连接的 ModbusTcpClient。
+        config: 点表配置。
+        pumpIndex: 0 表示 1# 泵，1 表示 2# 泵。
+
+    Returns:
+        float | None: 给定频率 Hz；读不到返回 None。
+    """
+    tag = "pump_0%d_freq_setpoint" % (pumpIndex + 1)
+    spec = next((item for item in config["holdings"] if item.get("tag") == tag), None)
+    if spec is None:
+        return None
+    response = client.read_holding_registers(
+        address=spec["offset"], count=1, slave=config["connection"]["deviceId"])
+    if response.isError():
+        return None
+    return round(response.registers[0] / spec.get("scale", 1), 1)
+
+
 def buildPayload(tags):
     """把标签字典包装成后端 / WebSocket 使用的消息体。
 

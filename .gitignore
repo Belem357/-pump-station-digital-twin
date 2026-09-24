@@ -9,3 +9,6 @@ desktop.ini
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 打包分发的压缩包（可随时重新生成）
+_send/
