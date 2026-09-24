@@ -112,7 +112,24 @@ python linkCheck.py                  # 看到 13/13 通过就算通了
 
 ---
 
-## 六、当前进度
+## 六、代码推送到哪（两个仓库）
+
+这个项目**同时推到两个地方**，内容完全一样：
+
+| 远程名 | 地址 | 分支 | 谁要求 |
+|---|---|---|---|
+| `origin` | GitHub · `Belem357/-pump-station-digital-twin` | `main` | 我们自己用 |
+| `gitee` | Gitee · `lichu-like/chizhouxueyuan25jike1ban8` | `master` | **老师要求** |
+
+**一键推两个**：双击 `_工具/push-all.bat`（或在命令行跑它）。
+
+> **为什么 Gitee 那边是 `master` 不是 `main`**：那个仓库是老师建的，默认分支就叫 `master`。我们本地的分支叫 `main`，所以推送命令写成 `git push gitee main:master`（把本地的 main 推成远程的 master）。
+>
+> **为什么第一次要 `--force`**：老师那个仓库建的时候生成了一个空白初始提交，和我们的历史没有共同祖先，不强推会被拒。**那次已经做完了**，之后正常推就行——`push-all.bat` 里用的是普通推送，没有 `--force`。
+
+---
+
+## 七、当前进度
 
 | 阶段 | 周次 | 状态 |
 |---|---|---|
