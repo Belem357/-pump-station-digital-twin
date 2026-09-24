@@ -1,0 +1,7 @@
+# Office 临时锁文件（Word/Excel 打开文档时自动生成，无内容价值）
+~$*
+
+# 系统垃圾文件
+Thumbs.db
+desktop.ini
+.DS_Store
