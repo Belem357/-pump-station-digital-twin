@@ -1,0 +1,58 @@
+{
+  "_说明": "小型二供泵房数字孪生 · Modbus 点表（唯一的地址/缩放数据源）",
+  "_依据": "05.Modbus建点表与IO点表_v1.0 + 03.接口规范与数据字典_v1.1.1 第四节",
+  "_用法": "sensorSim.py 和 protocolParser.py 都读这个文件，不要各改各的",
+  "_改名须知": "改这里的地址前，必须同步改《03.接口规范》并通知全组，地址是双方契约",
+
+  "connection": {
+    "host": "127.0.0.1",
+    "port": 502,
+    "deviceId": 1
+  },
+
+  "timing": {
+    "simTickMs": 200,
+    "sampleIntervalMs": 200,
+    "pushIntervalMs": 500,
+    "logIntervalSec": 5
+  },
+
+  "alarm": {
+    "_说明": "报警阈值。判定由后端负责，这里只是给模拟器造数时参考",
+    "levelLow": 25.0,
+    "levelHigh": 140.0,
+    "pressureHigh": 0.8,
+    "interlockDelaySec": 30
+  },
+
+  "holdings": [
+    { "address": 40001, "offset": 0,  "tag": "tank_level",          "cn": "水箱液位",     "unit": "cm",  "min": 0,   "max": 150.0, "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40002, "offset": 1,  "tag": "pipe_pressure",       "cn": "出水总管压力", "unit": "MPa", "min": 0,   "max": 1.0,   "scale": 1000, "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40003, "offset": 2,  "tag": "pump_01_status",      "cn": "1#泵状态",     "unit": "",    "min": 0,   "max": 2,     "scale": 1,    "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40004, "offset": 3,  "tag": "pump_01_freq",        "cn": "1#泵频率",     "unit": "Hz",  "min": 0,   "max": 50.0,  "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40005, "offset": 4,  "tag": "pump_01_current",     "cn": "1#泵电流",     "unit": "A",   "min": 0,   "max": 20.0,  "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40006, "offset": 5,  "tag": "pump_01_temp",        "cn": "1#泵电机温度", "unit": "℃",   "min": 0,   "max": 120.0, "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40007, "offset": 6,  "tag": "pump_02_status",      "cn": "2#泵状态",     "unit": "",    "min": 0,   "max": 2,     "scale": 1,    "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40008, "offset": 7,  "tag": "pump_02_freq",        "cn": "2#泵频率",     "unit": "Hz",  "min": 0,   "max": 50.0,  "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40009, "offset": 8,  "tag": "pump_02_current",     "cn": "2#泵电流",     "unit": "A",   "min": 0,   "max": 20.0,  "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40010, "offset": 9,  "tag": "pump_02_temp",        "cn": "2#泵电机温度", "unit": "℃",   "min": 0,   "max": 120.0, "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false },
+    { "address": 40011, "offset": 10, "tag": "sys_mode",            "cn": "系统模式",     "unit": "",    "min": 0,   "max": 1,     "scale": 1,    "type": "uint16",  "regCount": 1, "writable": false, "note": "0=手动, 1=自动" },
+    { "address": 40012, "offset": 11, "tag": "today_kwh",           "cn": "今日累计耗电量", "unit": "kWh", "min": 0, "max": 500.0, "scale": 1,    "type": "float32", "regCount": 2, "writable": false, "note": "全表唯一特例：32位浮点占两个寄存器，高字在前，不做整数缩放" },
+    { "address": 40014, "offset": 13, "tag": "valve_inlet_opening", "cn": "进水总阀开度", "unit": "%",   "min": 0,   "max": 100.0, "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false, "note": "可选测点，待 PM 决策" },
+    { "address": 40015, "offset": 14, "tag": "pipe_flow_speed",     "cn": "出水主管流速", "unit": "m/s", "min": 0,   "max": 3.0,   "scale": 100,  "type": "uint16",  "regCount": 1, "writable": false, "note": "可选测点，待 PM 决策" },
+    { "address": 40016, "offset": 15, "tag": null,                  "cn": "预留空号",     "note": "40016~40019 故意留空，将来加测点从这里往后接" },
+    { "address": 40017, "offset": 16, "tag": null,                  "cn": "预留空号" },
+    { "address": 40018, "offset": 17, "tag": null,                  "cn": "预留空号" },
+    { "address": 40019, "offset": 18, "tag": null,                  "cn": "预留空号" },
+    { "address": 40020, "offset": 19, "tag": "pump_01_freq_setpoint", "cn": "1#泵频率给定值", "unit": "Hz", "min": 0, "max": 50.0, "scale": 10, "type": "uint16", "regCount": 1, "writable": true, "note": "由后端写入，不是模拟器产生的" },
+    { "address": 40021, "offset": 20, "tag": "pump_02_freq_setpoint", "cn": "2#泵频率给定值", "unit": "Hz", "min": 0, "max": 50.0, "scale": 10, "type": "uint16", "regCount": 1, "writable": true, "note": "由后端写入，不是模拟器产生的" }
+  ],
+
+  "coils": [
+    { "address": 1, "offset": 0, "tag": "pump_01_cmd_start", "cn": "1#泵启动指令", "note": "写 1 启动，模拟器执行后自行复位为 0" },
+    { "address": 2, "offset": 1, "tag": "pump_01_cmd_stop",  "cn": "1#泵停止指令", "note": "写 1 停止，模拟器执行后自行复位为 0" },
+    { "address": 3, "offset": 2, "tag": "pump_02_cmd_start", "cn": "2#泵启动指令", "note": "写 1 启动，模拟器执行后自行复位为 0" },
+    { "address": 4, "offset": 3, "tag": "pump_02_cmd_stop",  "cn": "2#泵停止指令", "note": "写 1 停止，模拟器执行后自行复位为 0" },
+    { "address": 5, "offset": 4, "tag": "sys_cmd_set_mode",  "cn": "手自动切换指令", "note": "配合 sys_mode(40011) 使用" }
+  ]
+}

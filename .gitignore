@@ -10,5 +10,12 @@ desktop.ini
 __pycache__/
 *.pyc
 
+# Python 虚拟环境（各人本机自己建，不进仓库）
+.venv/
+venv/
+
+# SQLite 运行时数据（backend/data.db 删掉即清空历史）
+*.db
+
 # 打包分发的压缩包（可随时重新生成）
 _send/
