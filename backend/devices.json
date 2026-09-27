@@ -23,7 +23,7 @@
       "id": "tank",
       "name": "水箱（蓄水池）",
       "category": "储水设备",
-      "node3d": "tank_body",
+      "node3d": "tank_body / tank_water_surface",
       "tags": ["tank_level"],
       "desc": "蓄水缓冲容器，总高 150cm。市政来水先进入水箱储存，再被水泵抽走加压。液位低于 25cm 会触发低液位报警并联锁停泵，高于 140cm 触发高液位报警（防溢流）。",
       "sensor": {

@@ -23,6 +23,8 @@ REST + WebSocket 提供给前端。相对 exampleApi.py（参考实现）的增�
 import asyncio
 import json
 import os
+import socket
+import sys
 import time
 
 import uvicorn
@@ -43,6 +45,16 @@ from protocolParser import (
     writeSetpoint,
 )
 from storage import Storage
+
+# 控制台编码兜底：Windows 控制台默认 GBK，print emoji（✅/❌）会抛 UnicodeEncodeError。
+# 下面的启动横幅就在 FastAPI 的 startup 事件里，那里抛异常会让**整个服务起不来**
+# （实测踩过：`python main.py` 直接崩，走带 chcp 65001 的 .bat 才没事）。
+# 这里不强制改编码——改了中文反而在某些终端变乱码——只把无法编码的字符降级成 ?。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------- 常量
 
@@ -594,25 +606,81 @@ async def shutdown():
     storage.close()
 
 
-# ---------------------------------------------------------------- 静态前端（可选）
+# ---------------------------------------------------------------- 静态前端与 3D 模型
 
-# 前端目录自动探测两个位置（队友解压到桌面 或 放进泵房文件夹均可）：
-#   pump-monitor\pump-monitor\sence.html
-# 挂上后直接 http://127.0.0.1:8000/ 访问，免去 CORS / 起静态服务器的麻烦。
+# 前端目录自动探测：仓库里的 代码/frontend，以及队友解压到桌面的 pump-monitor。
+# 挂上之后 http://<地址>:8000/ 一个端口同时给前端页面、REST 接口和 WebSocket，
+# 不用再单独起静态服务器，也顺带绕开了 file:// 加载不了 .glb 的问题。
+_FRONTEND_PAGE = "scene.html"      # 注意是 scene，不是 sence
 _FRONTEND_CANDIDATES = [
+    os.path.abspath(os.path.join(BASE_DIR, "..", "代码", "frontend")),
     os.path.abspath(os.path.join(BASE_DIR, "..", "..", "pump-monitor", "pump-monitor")),
     os.path.abspath(os.path.join(BASE_DIR, "..", "pump-monitor", "pump-monitor")),
 ]
-FRONTEND_DIR = next((d for d in _FRONTEND_CANDIDATES if os.path.isdir(d)), None)
+# 认目录不算数，得有那个页面文件才算找到了
+FRONTEND_DIR = next((d for d in _FRONTEND_CANDIDATES
+                     if os.path.isfile(os.path.join(d, _FRONTEND_PAGE))), None)
+
+# 模型在仓库根，不在 代码/frontend 里，静态挂载覆盖不到，所以单独开一条路由
+MODEL_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "泵房.glb"))
+
+
+@app.get("/model.glb")
+async def pumpRoomModel():
+    """把仓库根的 泵房.glb 发给前端（GLTFLoader 直接按二进制取）。
+
+    MIME 用 model/gltf-binary；用默认的 octet-stream 有些浏览器会拒绝加载。
+
+    Returns:
+        FileResponse: 模型文件；文件不存在时返回 1003 错误。
+    """
+    if not os.path.isfile(MODEL_PATH):
+        return error(1003, "找不到模型文件 泵房.glb")
+    return FileResponse(MODEL_PATH, media_type="model/gltf-binary")
+
+
 if FRONTEND_DIR:
-    # 前端目前只有 sence.html（没有 index.html），"/" 显式指向它
     @app.get("/")
     async def frontendIndex():
-        return FileResponse(os.path.join(FRONTEND_DIR, "sence.html"))
+        """前端没有 index.html，"/" 显式指向 scene.html。"""
+        return FileResponse(os.path.join(FRONTEND_DIR, _FRONTEND_PAGE))
 
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
-    print("  前端页面   : http://127.0.0.1:8000/ （已挂载 %s）" % FRONTEND_DIR)
+
+
+def getLanAddress():
+    """取本机在局域网里的地址，用于打印给导师访问的网址。
+
+    用一个 UDP socket 探出口地址（UDP connect 不会真的发包）：
+    比 socket.gethostbyname 可靠——装了 VMware / 虚拟网卡时，
+    后者常返回一个别人根本连不上的虚拟网段地址。
+
+    Returns:
+        str: 形如 192.168.1.5 的地址；探测失败时返回 None。
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("8.8.8.8", 80))
+            return probe.getsockname()[0]
+    except Exception:
+        return None
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    print("=" * 62)
+    print("  泵房数字孪生 · 后端服务")
+    print("=" * 62)
+    if FRONTEND_DIR:
+        print("  前端页面   : http://127.0.0.1:8000/    （已挂载 %s）" % FRONTEND_DIR)
+    else:
+        print("  前端页面   : 没找到 %s，只提供接口" % _FRONTEND_PAGE)
+    print("  3D 模型    : http://127.0.0.1:8000/model.glb")
+    print("  接口文档   : http://127.0.0.1:8000/docs")
+    lanAddress = getLanAddress()
+    if lanAddress:
+        print("-" * 62)
+        print("  局域网访问（导师手机/别的电脑用这个地址）:")
+        print("      http://%s:8000/" % lanAddress)
+        print("  连不上先看 Windows 防火墙有没有拦入站 8000（首次启动会弹窗，选允许）")
+    print("=" * 62)
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")

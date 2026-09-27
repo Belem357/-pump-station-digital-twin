@@ -28,10 +28,34 @@ ALARM_LEVELS = {
     "comm_lost":     ("sys",   "warning"),
 }
 
+# 内部状态键 → 对外报警类型（接口规范 6.5「type 合法取值」）。
+# 两台泵必须在内部分开跟踪——各自的防抖计时和报警记录生命周期是独立的；
+# 但契约 6.5 的 type 枚举里只有 pump_fault 一个值，所以对外都报 pump_fault，
+# 是哪台泵由记录里的 device_id（pump_01 / pump_02）区分。
+# 内部键与对外类型故意不合并：合成一个键就没法同时跟踪两台泵了。
+ALARM_EXTERNAL_TYPES = {
+    "pump_01_fault": "pump_fault",
+    "pump_02_fault": "pump_fault",
+}
+
+
+def externalAlarmType(alarmType):
+    """把内部状态键映射成对外的报警类型。
+
+    Args:
+        alarmType: 内部状态键，如 pump_01_fault。
+
+    Returns:
+        str: 对外的 type 值；没有特殊映射的返回原值（level_low 等）。
+    """
+    return ALARM_EXTERNAL_TYPES.get(alarmType, alarmType)
+
 # 通信中断：后端连续 5 秒读不到模拟器数据才生成报警记录（接口规范 6.5）
 COMM_LOST_DEBOUNCE_SEC = 5.0
 
 # 报警消息模板（对应 pointTable.json 里的中文名，便于验收时人眼核对）
+# 键是内部状态键、不是对外 type。泵故障的文案刻意保留泵号：对外 type 统一是 pump_fault，
+# 但 message 是写给人看的，写清 1# 还是 2# 才方便验收时肉眼核对。
 MESSAGES = {
     "level_low":     "水箱液位过低(%.1fcm)",
     "level_high":    "水箱液位过高(%.1fcm)",
@@ -143,7 +167,9 @@ class AlarmEngine:
         # 静态文案（泵故障、通信中断）没有 % 占位符，只有带占位符的模板才格式化
         message = template % value if "%" in template and value is not None else template
         item["recordId"] = self.store.addAlarm({
-            "type": alarmType, "device_id": deviceId, "level": level,
+            # 写出去的是契约 6.5 的枚举值，不是内部状态键（泵故障统一为 pump_fault）
+            "type": externalAlarmType(alarmType),
+            "device_id": deviceId, "level": level,
             "time_start": int(now), "value_at_trigger": value,
             "threshold": threshold, "message": message,
         })
