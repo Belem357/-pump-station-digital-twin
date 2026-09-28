@@ -1,9 +1,28 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
+title Pump-1 simulator
+
+rem Keep this file pure ASCII and CRLF - see the note in the launcher bat.
+rem cmd.exe desyncs its parser on non-ASCII lines read under a mismatched
+rem code page, and the rest of the file runs as garbage commands.
+
+rem Really execute the candidate Python: .venv copied from another machine
+rem points at a missing interpreter path, so an existence check is not enough.
+set "PY=.venv\Scripts\python.exe"
+if not exist "%PY%" set "PY=python"
+"%PY%" -c "pass" >nul 2>&1
+if errorlevel 1 set "PY=python"
+"%PY%" -c "pass" >nul 2>&1
+if errorlevel 1 (
+  echo [ERROR] no working Python found - check "python --version"
+  pause
+  exit /b 1
+)
+
 echo ============================================
-echo  泵房数字孪生 - 传感器模拟器（窗口1）
-echo  跑起来后别关这个窗口，按 Ctrl+C 退出
+echo  Pump Room Digital Twin - sensor simulator
+echo  window 1 of 2 - keep it open, Ctrl+C to quit
 echo ============================================
-.venv\Scripts\python.exe sensorSim.py
+%PY% sensorSim.py
 pause

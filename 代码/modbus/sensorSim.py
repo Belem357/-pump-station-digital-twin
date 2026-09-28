@@ -19,6 +19,15 @@ import os
 import random
 import struct
 import sys
+
+# 控制台编码兜底：Windows 控制台默认 GBK，print 出来的 ✅/❌/🎉 会抛
+# UnicodeEncodeError，脚本会直接崩在最后那行总结上——而那行恰恰最要紧。
+# 这里不强制改编码（改了中文在某些终端反而变乱码），只把无法编码的字符降级成 ?。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except Exception:
+        pass
 import time
 
 from pymodbus.datastore import (
