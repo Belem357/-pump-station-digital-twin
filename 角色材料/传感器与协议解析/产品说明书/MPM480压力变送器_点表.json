@@ -1,0 +1,31 @@
+{
+  "_说明": "3.2 压力 · MPM480 压力变送器 · Modbus 点表（4-20mA，0~1.0MPa）",
+  "_依据": "《10.传感器选型说明》3.2 节 + pointTable.json 中 pipe_pressure 条目（40002）",
+  "_用法": "本件的 sensor 段已并入 代码/backend/pointTable.json 的 sensors 段；本件为来源留档，改型号/量程请改总点表后再同步本件",
+  "sensor": {
+    "model": "MPM480",
+    "brand": "麦克传感",
+    "type": "压力变送器",
+    "range": "0~1.0 MPa",
+    "output": "4-20mA（两线制）",
+    "accuracy": "0.5%FS",
+    "power": "24VDC",
+    "signalType": "模拟量输入 AI 4-20mA"
+  },
+  "holdings": [
+    {
+      "address": 40002,
+      "offset": 1,
+      "tag": "pipe_pressure",
+      "cn": "出水总管压力",
+      "unit": "MPa",
+      "min": 0,
+      "max": 1.0,
+      "scale": 1000,
+      "type": "uint16",
+      "regCount": 1,
+      "writable": false,
+      "note": "4mA=0MPa，20mA=1.0MPa；工程值(MPa)=寄存器值/1000"
+    }
+  ]
+}

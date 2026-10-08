@@ -1,0 +1,31 @@
+{
+  "_说明": "3.1 液位 · MPM4700 投入式液位变送器 · Modbus 点表（4-20mA，0~2mH2O）",
+  "_依据": "《10.传感器选型说明》3.1 节 + pointTable.json 中 tank_level 条目（40001）",
+  "_用法": "本件的 sensor 段已并入 代码/backend/pointTable.json 的 sensors 段；本件为来源留档，改型号/量程请改总点表后再同步本件",
+  "sensor": {
+    "model": "MPM4700",
+    "brand": "麦克传感",
+    "type": "投入式液位变送器",
+    "range": "0~2 mH2O",
+    "output": "4-20mA（两线制）",
+    "accuracy": "0.5%FS",
+    "power": "24VDC",
+    "signalType": "模拟量输入 AI 4-20mA"
+  },
+  "holdings": [
+    {
+      "address": 40001,
+      "offset": 0,
+      "tag": "tank_level",
+      "cn": "水箱液位",
+      "unit": "cm",
+      "min": 0,
+      "max": 150.0,
+      "scale": 10,
+      "type": "uint16",
+      "regCount": 1,
+      "writable": false,
+      "note": "4mA=0cm，20mA=200cm；工程值(cm)=寄存器值/10；使用上限150cm"
+    }
+  ]
+}

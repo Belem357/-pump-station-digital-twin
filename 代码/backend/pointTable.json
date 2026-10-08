@@ -25,6 +25,82 @@
     "interlockDelaySec": 30
   },
 
+  "sensors": {
+    "_说明": "传感器选型台账。5 份产品说明书（角色材料/传感器与协议解析/产品说明书/）的汇总，供建点、解析与答辩引用。型号与主要参数已按厂商官方公开资料核实，选型理由见《共享文档/10.传感器选型说明 v1.2》。",
+    "_注意": "改型号/量程/精度时，必须同步改本文件 + 10.传感器选型说明 + devices.json（讲解卡片读后者），三处不一致会导致答辩材料互相矛盾。",
+    "_数量说明": "quantity 是「本项目在该测点上装几支」。三压分区改造后部分数量会变，见《共享文档/12.三压分区改造方案》。",
+
+    "level": {
+      "name": "投入式液位变送器",
+      "tags": ["tank_level"],
+      "model": "MPM4700",
+      "brand": "麦克传感（Micro Sensor）",
+      "range": "0~2 mH₂O",
+      "output": "4-20mA DC 两线制",
+      "accuracy": "0.5%FS",
+      "power": "24VDC",
+      "signalType": "模拟量输入 AI 4-20mA",
+      "quantity": 1,
+      "note": "2m 不是标准量程档（标准档为 3.5/7/10/20/35/70/100/200 mH₂O），由 10m 基本量程按「最小缩放 1/5」得到；官方说明小量程段缩放后精度典型值为 ±0.5%FS，故 0.5%FS 是厂商指标而非随意填写"
+    },
+
+    "pressure": {
+      "name": "压力变送器",
+      "tags": ["pipe_pressure"],
+      "model": "MPM480",
+      "brand": "麦克传感（Micro Sensor）",
+      "range": "0~1.0 MPa",
+      "output": "4-20mA DC 两线制",
+      "accuracy": "0.5%FS",
+      "power": "24VDC",
+      "signalType": "模拟量输入 AI 4-20mA",
+      "quantity": 1,
+      "note": "0.5%FS 取的是官方最大值（典型值 0.25%FS），属保守取值；供电官方规格 15~30VDC。吸收水锤靠不锈钢隔离膜片"
+    },
+
+    "temperature": {
+      "name": "装配式铂电阻 + 一体化温度变送器",
+      "tags": ["pump_01_temp", "pump_02_temp"],
+      "model": "PT100",
+      "brand": "通用件（各厂均有）",
+      "range": "0~150 ℃",
+      "output": "4-20mA DC 两线制（PT100 三线制输入）",
+      "accuracy": "0.5%FS",
+      "power": "24VDC",
+      "signalType": "模拟量输入 AI 4-20mA",
+      "quantity": 2,
+      "note": "通用件，无对应厂商货号，参数为行业通行值；三线制用于抵消引线电阻"
+    },
+
+    "current": {
+      "name": "电流互感器 + 电流变送器",
+      "tags": ["pump_01_current", "pump_02_current"],
+      "model": "BH-0.66",
+      "brand": "通用件（正泰/德力西/人民电器等）",
+      "range": "0~20 A",
+      "output": "4-20mA DC 两线制",
+      "accuracy": "0.5%FS",
+      "power": "24VDC",
+      "signalType": "模拟量输入 AI 4-20mA",
+      "quantity": 2,
+      "note": "「0.66」是额定电压 0.66kV，不是开口式编号——型号系列为穿心式，套装需先断线；devices.json 原写「开口式安装」待 ① 核实。通用件，无对应厂商货号"
+    },
+
+    "energy": {
+      "name": "三相多功能电能表",
+      "tags": ["today_kwh"],
+      "model": "DTSD1352",
+      "brand": "安科瑞 Acrel",
+      "range": "三相四线 3×220/380V",
+      "output": "RS485 / Modbus RTU（经网关转 Modbus TCP）",
+      "accuracy": "0.5S 级（有功）/ 2 级（无功）",
+      "power": "220VAC",
+      "signalType": "数字量通信，非模拟量",
+      "quantity": 1,
+      "note": "全表唯一走 RS485 的设备，真机需 RS485→TCP 网关；数量 1 为「当前单区方案」，三压改造后为 1 总表 + 3 分区表（见《12》决策 12）"
+    }
+  },
+
   "holdings": [
     { "address": 40001, "offset": 0,  "tag": "tank_level",          "cn": "水箱液位",     "unit": "cm",  "min": 0,   "max": 150.0, "scale": 10,   "type": "uint16",  "regCount": 1, "writable": false },
     { "address": 40002, "offset": 1,  "tag": "pipe_pressure",       "cn": "出水总管压力", "unit": "MPa", "min": 0,   "max": 1.0,   "scale": 1000, "type": "uint16",  "regCount": 1, "writable": false },

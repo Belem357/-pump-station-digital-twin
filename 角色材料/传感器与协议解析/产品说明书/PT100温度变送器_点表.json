@@ -1,0 +1,46 @@
+{
+  "_说明": "3.3 温度 · PT100 装配式铂电阻 + 一体化变送器 · Modbus 点表（4-20mA，0~150℃，1#/2#泵各一支）",
+  "_依据": "《10.传感器选型说明》3.3 节 + pointTable.json 中 pump_01_temp（40006）、pump_02_temp（40010）条目",
+  "_用法": "本件的 sensor 段已并入 代码/backend/pointTable.json 的 sensors 段；本件为来源留档，改型号/量程请改总点表后再同步本件",
+  "sensor": {
+    "model": "PT100",
+    "brand": "通用件（各厂均有）",
+    "type": "装配式铂电阻 + 一体化温度变送器",
+    "range": "0~150 ℃",
+    "output": "4-20mA（PT100 三线制输入，两线制输出）",
+    "accuracy": "0.5%FS",
+    "power": "24VDC",
+    "signalType": "模拟量输入 AI 4-20mA",
+    "quantity": "2 支（1#、2# 泵各一支）"
+  },
+  "holdings": [
+    {
+      "address": 40006,
+      "offset": 5,
+      "tag": "pump_01_temp",
+      "cn": "1#泵电机温度",
+      "unit": "℃",
+      "min": 0,
+      "max": 120.0,
+      "scale": 10,
+      "type": "uint16",
+      "regCount": 1,
+      "writable": false,
+      "note": "4mA=0℃，20mA=150℃；工程值(℃)=寄存器值/10；使用上限120℃"
+    },
+    {
+      "address": 40010,
+      "offset": 9,
+      "tag": "pump_02_temp",
+      "cn": "2#泵电机温度",
+      "unit": "℃",
+      "min": 0,
+      "max": 120.0,
+      "scale": 10,
+      "type": "uint16",
+      "regCount": 1,
+      "writable": false,
+      "note": "4mA=0℃，20mA=150℃；工程值(℃)=寄存器值/10；使用上限120℃"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "_说明": "3.5 电度 · DTSD1352 三相多功能电能表 · Modbus 点表（RS485/Modbus RTU → 网关 → Modbus TCP）",
+  "_依据": "《10.传感器选型说明》3.5 节 + pointTable.json 中 today_kwh（40012）条目",
+  "_用法": "本件的 sensor 段已并入 代码/backend/pointTable.json 的 sensors 段；本件为来源留档，改型号/量程请改总点表后再同步本件",
+  "sensor": {
+    "model": "DTSD1352",
+    "brand": "安科瑞 Acrel",
+    "type": "三相四线多功能电能表",
+    "range": "三相四线 3×220/380V",
+    "output": "RS485 / Modbus RTU",
+    "accuracy": "0.5S级（有功）/ 2级（无功）",
+    "power": "220VAC",
+    "signalType": "数字量通信 Modbus RTU（经网关转 Modbus TCP）",
+    "quantity": "1 台（泵房总进线）"
+  },
+  "holdings": [
+    {
+      "address": 40012,
+      "offset": 11,
+      "tag": "today_kwh",
+      "cn": "今日累计耗电量",
+      "unit": "kWh",
+      "min": 0,
+      "max": 500.0,
+      "scale": 1,
+      "type": "float32",
+      "regCount": 2,
+      "writable": false,
+      "note": "32位浮点占两个寄存器（40012~40013），高字在前，不做整数缩放；例 12.6kWh → 高字16713/低字39322"
+    }
+  ]
+}

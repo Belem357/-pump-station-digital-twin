@@ -1,0 +1,46 @@
+{
+  "_说明": "3.4 电流 · BH-0.66 电流互感器 + 电流变送器 · Modbus 点表（4-20mA，0~20A，1#/2#泵各一支）",
+  "_依据": "《10.传感器选型说明》3.4 节 + pointTable.json 中 pump_01_current（40005）、pump_02_current（40009）条目",
+  "_用法": "本件的 sensor 段已并入 代码/backend/pointTable.json 的 sensors 段；本件为来源留档，改型号/量程请改总点表后再同步本件",
+  "sensor": {
+    "model": "BH-0.66",
+    "brand": "通用件（各厂均有）",
+    "type": "电流互感器 + 电流变送器",
+    "range": "0~20 A",
+    "output": "4-20mA（两线制）",
+    "accuracy": "0.5%FS",
+    "power": "24VDC",
+    "signalType": "模拟量输入 AI 4-20mA",
+    "quantity": "2 支（1#、2# 泵各一支）"
+  },
+  "holdings": [
+    {
+      "address": 40005,
+      "offset": 4,
+      "tag": "pump_01_current",
+      "cn": "1#泵电流",
+      "unit": "A",
+      "min": 0,
+      "max": 20.0,
+      "scale": 10,
+      "type": "uint16",
+      "regCount": 1,
+      "writable": false,
+      "note": "4mA=0A，20mA=20A；工程值(A)=寄存器值/10"
+    },
+    {
+      "address": 40009,
+      "offset": 8,
+      "tag": "pump_02_current",
+      "cn": "2#泵电流",
+      "unit": "A",
+      "min": 0,
+      "max": 20.0,
+      "scale": 10,
+      "type": "uint16",
+      "regCount": 1,
+      "writable": false,
+      "note": "4mA=0A，20mA=20A；工程值(A)=寄存器值/10"
+    }
+  ]
+}
