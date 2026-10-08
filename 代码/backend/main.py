@@ -527,10 +527,13 @@ async def getDevices():
 
     ⚠️ 本接口不在接口规范 v1.1.1 里，是后端为课程选题场景新增的扩展，
     需 PM 在群里公告确认（接口规范总则第三条：新增字段必须 PM 公告）。
-    内容来自桌面图片《传感器推荐型号表》（写进文档/答辩用）：
-      液位 MPM4700 投入式液位变送器（麦克传感）、压力 MPM4800 压力变送器、
+    型号于 2026-10-08 按厂商官方公开资料逐个核实（原《传感器推荐型号表》图片已不可查），
+    选型理由见 共享文档/10.传感器选型说明_v1.2：
+      液位 MPM4700 投入式液位变送器（麦克传感）、压力 MPM480 压力变送器、
       温度 PT100 铂电阻+一体化变送器、电流 BH-0.66 电流互感器+变送器、
-      电度 DTSD1352 三相多功能电能表（安科瑞）。
+      电度 DTSD1352 三相多功能电能表（安科瑞，有功 0.5S 级）。
+
+    ⚠️ 型号数据只在 devices.json 里维护，不要在本文件硬编码——改型号要同时改那份文档。
     """
     try:
         with open(DEVICES_PATH, "r", encoding="utf-8") as fileHandle:
@@ -613,7 +616,7 @@ async def shutdown():
 # 不用再单独起静态服务器，也顺带绕开了 file:// 加载不了 .glb 的问题。
 _FRONTEND_PAGE = "scene.html"      # 注意是 scene，不是 sence
 _FRONTEND_CANDIDATES = [
-    os.path.abspath(os.path.join(BASE_DIR, "..", "代码", "frontend")),
+    os.path.abspath(os.path.join(BASE_DIR, "..", "frontend")),
     os.path.abspath(os.path.join(BASE_DIR, "..", "..", "pump-monitor", "pump-monitor")),
     os.path.abspath(os.path.join(BASE_DIR, "..", "pump-monitor", "pump-monitor")),
 ]
@@ -622,7 +625,8 @@ FRONTEND_DIR = next((d for d in _FRONTEND_CANDIDATES
                      if os.path.isfile(os.path.join(d, _FRONTEND_PAGE))), None)
 
 # 模型在仓库根，不在 代码/frontend 里，静态挂载覆盖不到，所以单独开一条路由
-MODEL_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "泵房.glb"))
+# 后端已挪到 代码/backend，离仓库根是两级，所以这里要退两次
+MODEL_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "泵房.glb"))
 
 
 @app.get("/model.glb")

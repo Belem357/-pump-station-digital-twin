@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>泵房数字孪生监控系统</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:"Microsoft YaHei",sans-serif; background:#0a0e17; color:#c8d6e5; overflow:hidden; }
+#app { position:relative; width:100vw; height:100vh; }
+.page { position:absolute; inset:0; }
+.page[hidden] { display:none !important; }
+
+#page-scene { position:absolute; inset:0; }
+#canvas-wrap { position:absolute; inset:0; }
+.topbar { position:absolute; top:0; left:0; right:0; height:56px; display:flex; align-items:center;
+  justify-content:space-between; padding:0 20px;
+  background:linear-gradient(180deg,rgba(10,20,40,.9),transparent); z-index:10; }
+.title { font-size:18px; font-weight:600; letter-spacing:2px; color:#4fc3f7; }
+.topbar-right { display:flex; align-items:center; gap:20px; }
+.status-lights { display:flex; gap:18px; align-items:center; }
+.light-item { display:flex; align-items:center; gap:6px; font-size:13px; }
+.dot { width:12px; height:12px; border-radius:50%; background:#333; box-shadow:0 0 6px #000; transition:.3s; }
+.dot.on { background:#00e676; box-shadow:0 0 12px #00e676; }
+.dot.warn { background:#ffb300; box-shadow:0 0 12px #ffb300; }
+.dot.err { background:#ff1744; box-shadow:0 0 12px #ff1744; animation:blink .6s infinite; }
+@keyframes blink { 50% { opacity:.3; } }
+.enter-btn { padding:8px 18px; border:1px solid #4fc3f7; border-radius:6px;
+  background:rgba(79,195,247,.12); color:#4fc3f7; font-size:13px; font-weight:600;
+  cursor:pointer; transition:.25s; letter-spacing:1px; }
+.enter-btn:hover { background:#4fc3f7; color:#0a0e17; box-shadow:0 0 16px rgba(79,195,247,.6); }
+.back-btn { padding:7px 16px; border:1px solid #475569; border-radius:6px;
+  background:transparent; color:#94a3b8; font-size:13px; font-weight:600;
+  cursor:pointer; transition:.25s; }
+.back-btn:hover { color:#4fc3f7; border-color:#4fc3f7; }
+.panel { position:absolute; left:20px; top:80px; width:230px; background:rgba(16,26,44,.92);
+  border:1px solid #1e3a5f; border-radius:10px; padding:16px; z-index:10; backdrop-filter:blur(6px); }
+.panel h3 { font-size:13px; color:#4fc3f7; margin-bottom:14px; border-left:3px solid #4fc3f7; padding-left:8px; }
+.btn-row { display:flex; gap:10px; margin-bottom:16px; }
+.btn { flex:1; padding:9px 0; border:none; border-radius:6px; cursor:pointer; font-size:13px;
+  color:#fff; background:#263a5c; transition:.2s; }
+.btn:hover { filter:brightness(1.2); }
+.btn.start.active { background:#00b34a; box-shadow:0 0 12px rgba(0,230,118,.5); }
+.btn.stop.active { background:#c62828; box-shadow:0 0 12px rgba(255,23,68,.5); }
+.btn.fill.active { background:#0288d1; box-shadow:0 0 12px rgba(3,169,244,.7); }
+.btn.drain.active { background:#f57c00; box-shadow:0 0 12px rgba(255,152,0,.7); }
+.field { margin-bottom:14px; }
+.field label { display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px; color:#8aa4c8; }
+.field label b { color:#4fc3f7; }
+input[type=range] { width:100%; accent-color:#4fc3f7; }
+.dashboard { position:absolute; right:20px; top:80px; width:220px; z-index:10;
+  display:flex; flex-direction:column; gap:12px; }
+.gauge { background:rgba(16,26,44,.92); border:1px solid #1e3a5f; border-radius:10px; padding:14px 16px; }
+.gauge .name { font-size:12px; color:#8aa4c8; margin-bottom:6px; }
+.gauge .val { font-size:26px; font-weight:700; color:#4fc3f7; font-family:Consolas,monospace; }
+.gauge .val small { font-size:13px; color:#8aa4c8; margin-left:4px; }
+.bar { height:6px; background:#1e3a5f; border-radius:3px; margin-top:10px; overflow:hidden; }
+.bar > i { display:block; height:100%; width:0;
+  background:linear-gradient(90deg,#4fc3f7,#00e676); transition:width .3s; }
+.gauge.danger .val { color:#ff5252; }
+.gauge.danger .bar > i { background:linear-gradient(90deg,#ffb300,#ff1744); }
+.views { position:absolute; left:20px; bottom:20px; display:flex; gap:8px; z-index:10; }
+.views button { padding:7px 14px; font-size:12px; background:rgba(16,26,44,.92); color:#8aa4c8;
+  border:1px solid #1e3a5f; border-radius:6px; cursor:pointer; transition:.2s; }
+.views button:hover, .views button.active { color:#4fc3f7; border-color:#4fc3f7; }
+/* 3D 大屏顶部的浮动报警横幅。
+   注意类名必须是这种专属名字，不能叫 .alarm —— 曾经叫 .alarm 的后果是：
+   页面里 .metric-value.alarm / .toast.alarm / .tank.alarm 这些复合选择器
+   虽然特异性更高、能覆盖 color，但 position/top/left/transform 只有 .alarm 定义过，
+   于是低液位报警一触发，液位数字、Toast、简化水箱全被绝对定位甩到页面正中上方。 */
+.alarm-banner { position:absolute; top:70px; left:50%; transform:translateX(-50%); padding:8px 24px;
+  border-radius:6px; background:rgba(255,23,68,.15); border:1px solid #ff1744;
+  color:#ff5252; font-size:13px; z-index:20; animation:blink 1s infinite; }
+
+#page-pump { position:absolute; inset:0; overflow-y:auto; background:#0f172a;
+  color:#e2e8f0; padding:16px; }
+#page-pump .container { max-width:1200px; margin:0 auto; }
+#page-data { position:absolute; inset:0; overflow-y:auto; background:#0f172a;
+  color:#e2e8f0; padding:16px; }
+#page-data .container { max-width:1200px; margin:0 auto; }
+.banner { background:#dc2626; color:#fff; text-align:center; padding:10px;
+  border-radius:8px; margin-bottom:12px; animation:blink 1.2s infinite; }
+.banner.warn { background:#f59e0b; }
+.header { display:flex; justify-content:space-between; align-items:center;
+  background:#1e293b; padding:16px 20px; border-radius:12px; margin-bottom:16px;
+  flex-wrap:wrap; gap:12px; }
+.header h1 { font-size:18px; font-weight:600; }
+.mode-box { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.mode-tag { padding:6px 14px; border-radius:20px; font-size:13px; font-weight:600; }
+.mode-auto { background:#16a34a; color:#fff; }
+.mode-manual { background:#3b82f6; color:#fff; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media (max-width:800px) { .grid { grid-template-columns:1fr; } }
+.card { background:#1e293b; border-radius:12px; padding:20px; border:1px solid #334155; }
+.card h2 { font-size:15px; font-weight:600; margin-bottom:16px; color:#94a3b8;
+  text-transform:uppercase; letter-spacing:.5px; }
+.metric { margin-bottom:14px; }
+.metric-label { font-size:13px; color:#94a3b8; margin-bottom:4px; }
+.metric-value { font-size:28px; font-weight:700; }
+.metric-value.alarm { color:#ef4444; animation:blink 1s infinite; }
+.metric-value.ok { color:#22d3ee; }
+.pump-row { display:flex; justify-content:space-between; align-items:center;
+  padding:12px; background:#0f172a; border-radius:8px; margin-bottom:10px;
+  flex-wrap:wrap; gap:8px; }
+.pump-info { display:flex; align-items:center; gap:12px; }
+.pump-name { font-weight:600; font-size:14px; }
+.st { font-size:12px; padding:3px 10px; border-radius:12px; font-weight:600; }
+.st-run { background:#16a34a; color:#fff; }
+.st-stop { background:#475569; color:#cbd5e1; }
+.st-fault { background:#dc2626; color:#fff; animation:blink 1s infinite; }
+.btns { display:flex; gap:8px; }
+.pump-btn { padding:7px 16px; border:none; border-radius:6px; cursor:pointer;
+  font-size:13px; font-weight:600; transition:all .15s; background:#334155; color:#e2e8f0; }
+.pump-btn:hover:not(:disabled) { background:#475569; }
+.pump-btn:disabled { opacity:.35; cursor:not-allowed; }
+.pump-btn.primary { background:#2563eb; color:#fff; }
+.pump-btn.primary:hover:not(:disabled) { background:#1d4ed8; }
+.pump-btn.danger { background:#dc2626; color:#fff; }
+.pump-btn.danger:hover:not(:disabled) { background:#b91c1c; }
+.tip { font-size:12px; color:#f87171; margin-top:8px; }
+.scene { height:220px; background:#0f172a; border-radius:8px; display:flex;
+  align-items:flex-end; justify-content:space-around; padding:20px;
+  position:relative; overflow:hidden; }
+.tank { width:80px; height:140px; border:3px solid #475569; border-radius:6px;
+  position:relative; overflow:hidden; transition:border-color .3s; }
+.tank.alarm { border-color:#ef4444; animation:blink 1s infinite; }
+.tank-fill { position:absolute; bottom:0; left:0; right:0;
+  background:linear-gradient(to top,#0ea5e9,#38bdf8); transition:height .5s ease; }
+.tank.alarm .tank-fill { background:linear-gradient(to top,#ef4444,#f87171); }
+.tank-label { position:absolute; bottom:-24px; left:50%; transform:translateX(-50%);
+  font-size:12px; color:#94a3b8; white-space:nowrap; }
+.pump3d { width:50px; height:50px; border-radius:50%; border:4px solid #475569;
+  border-top-color:#22d3ee; transition:border-color .3s; }
+.pump3d.spin { animation:spin 1s linear infinite; border-top-color:#22d3ee; }
+.pump3d.fault { border-color:#dc2626; animation:blink 1s infinite; }
+.pump3d-wrap { text-align:center; }
+.pump3d-label { font-size:12px; color:#94a3b8; margin-top:8px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.status-bar { margin-top:16px; padding:10px 16px; background:#1e293b;
+  border-radius:8px; font-size:12px; color:#64748b;
+  display:flex; gap:20px; flex-wrap:wrap; }
+.dot-status { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+.dot-status.on { background:#16a34a; }
+.dot-status.off { background:#dc2626; }
+.toast-wrap { position:fixed; top:20px; right:20px; z-index:9999;
+  display:flex; flex-direction:column; gap:10px; }
+.toast { padding:14px 20px; border-radius:8px; color:#fff; font-size:14px;
+  font-weight:600; min-width:260px; box-shadow:0 8px 24px rgba(0,0,0,.4);
+  animation:slideIn .3s ease; }
+.toast.alarm { background:#dc2626; animation:slideIn .3s ease, blink 1s infinite; }
+.toast.recover { background:#16a34a; }
+.toast.info { background:#2563eb; }
+@keyframes slideIn { from { transform:translateX(100%); opacity:0; }
+                     to { transform:translateX(0); opacity:1; } }
+.modal-mask { position:fixed; inset:0; background:rgba(0,0,0,.6);
+  display:flex; align-items:center; justify-content:center; z-index:10000; }
+.modal { background:#1e293b; padding:28px; border-radius:12px; max-width:400px;
+  width:90%; border:1px solid #334155; }
+.modal p { margin-bottom:20px; line-height:1.6; color:#cbd5e1; }
+.modal .btns { justify-content:flex-end; }
+.modal button { padding:7px 18px; border:none; border-radius:6px; cursor:pointer;
+  font-size:13px; font-weight:600; background:#334155; color:#e2e8f0; }
+.modal button.primary { background:#2563eb; color:#fff; }
+
+/* ============ 数据面板 ============ */
+.chart-box { height:170px; margin-bottom:14px; }
+.alarm-list { display:flex; flex-direction:column; gap:10px; max-height:380px; overflow-y:auto; }
+.alarm-item { padding:12px; background:#0f172a; border-radius:8px; border-left:3px solid #475569; }
+.alarm-item.active { border-left-color:#dc2626; }
+.alarm-item.recovered { border-left-color:#16a34a; }
+.alarm-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.alarm-id { font-size:12px; color:#64748b; font-family:Consolas,monospace; }
+.alarm-tag { font-size:11px; padding:2px 8px; border-radius:10px; font-weight:600; }
+.alarm-tag.lv-critical { background:#dc2626; color:#fff; }
+.alarm-tag.lv-warning { background:#f59e0b; color:#111; }
+.alarm-status { font-size:11px; padding:2px 8px; border-radius:10px; }
+.alarm-status.active { background:rgba(220,38,38,.15); color:#f87171; }
+.alarm-status.recovered { background:rgba(22,163,74,.15); color:#4ade80; }
+.alarm-msg { font-size:13px; color:#e2e8f0; margin:6px 0 4px; }
+.alarm-time { font-size:11px; color:#64748b; }
+.empty { font-size:13px; color:#64748b; text-align:center; padding:24px 0; }
+.pager { display:flex; align-items:center; gap:12px; justify-content:flex-end; margin-top:12px; }
+.pager button { padding:5px 12px; font-size:12px; background:#334155; color:#e2e8f0; border:none; border-radius:6px; cursor:pointer; }
+.pager button:disabled { opacity:.35; cursor:not-allowed; }
+.pager span { font-size:12px; color:#94a3b8; }
+.sys-intro { font-size:13px; color:#cbd5e1; line-height:1.7; margin-bottom:14px; }
+.flow-steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; margin-bottom:16px; }
+.flow-step { padding:12px; background:#0f172a; border-radius:8px; }
+.flow-step b { display:block; font-size:13px; color:#4fc3f7; margin-bottom:4px; }
+.flow-step span { font-size:12px; color:#94a3b8; line-height:1.6; }
+.device-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
+.device-card { padding:14px; background:#0f172a; border:1px solid #334155; border-radius:10px; }
+.device-name { font-size:14px; font-weight:600; color:#e2e8f0; margin-bottom:2px; }
+.device-cat { display:inline-block; font-size:11px; color:#4fc3f7; background:rgba(79,195,247,.1); padding:2px 8px; border-radius:10px; margin-bottom:8px; }
+.device-desc { font-size:12px; color:#94a3b8; line-height:1.6; margin-bottom:8px; }
+.device-sensor { font-size:11px; color:#64748b; border-top:1px dashed #334155; padding-top:8px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ 界面 2：泵房监控（首页） ============ -->
+  <div class="page" id="page-pump" v-show="currentPage === 'pump'">
+    <div class="container">
+
+      <div class="header">
+        <h1>🏭 二供泵房数字孪生监控系统</h1>
+        <div class="mode-box">
+          <span class="mode-tag" :class="isAutoMode ? 'mode-auto' : 'mode-manual'">
+            当前：{{ isAutoMode ? '自动模式' : '手动模式' }}
+          </span>
+          <button class="pump-btn primary" :disabled="!wsConnected" @click="askModeSwitch">
+            切换为{{ isAutoMode ? '手动' : '自动' }}模式
+          </button>
+          <button class="enter-btn" @click="currentPage = 'data'">数据面板 →</button>
+          <button class="enter-btn" @click="currentPage = 'scene'">进入 3D 大屏 →</button>
+        </div>
+      </div>
+
+      <div v-if="!wsConnected" class="banner">△ 数据连接断开，正在重连……</div>
+      <div v-else-if="!plcConnected" class="banner warn">⚠ 数据服务未就绪（PLC未连接）</div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>实时数据</h2>
+          <div class="metric">
+            <div class="metric-label">水箱液位 tank_level</div>
+            <div class="metric-value" :class="alarmLevelLow ? 'alarm' : 'ok'">
+              {{ tankLevel.toFixed(1) }} cm
+            </div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">管网压力 pipe_pressure</div>
+            <div class="metric-value ok">{{ pipePressure.toFixed(2) }} MPa</div>
+          </div>
+
+          <h2 style="margin-top:20px;">3D 场景（简化）</h2>
+          <div class="scene">
+            <div style="text-align:center;">
+              <div class="tank" :class="{ alarm: alarmLevelLow }">
+                <div class="tank-fill" :style="{ height: tankPercent + '%' }"></div>
+              </div>
+              <div class="tank-label">水箱 {{ tankLevel.toFixed(0) }}cm</div>
+            </div>
+            <div class="pump3d-wrap" v-for="id in pumpIds" :key="id">
+              <div class="pump3d"
+                   :class="{ spin: pumps[id].status === 1, fault: pumps[id].status === 2 }"></div>
+              <div class="pump3d-label">{{ id }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>水泵控制（下控操作）</h2>
+          <div v-for="id in pumpIds" :key="id" class="pump-row">
+            <div class="pump-info">
+              <span class="pump-name">{{ id }}</span>
+              <span class="st" :class="statusClass(pumps[id].status)">
+                {{ statusText(pumps[id].status) }}
+              </span>
+            </div>
+            <div class="btns">
+              <button class="pump-btn primary"
+                      :disabled="!canOperate(id) || loading[id]"
+                      @click="onStart(id)">
+                {{ loading[id] ? '下发中…' : '启动' }}
+              </button>
+              <button class="pump-btn danger"
+                      :disabled="!canOperate(id) || loading[id]"
+                      @click="onStop(id)">
+                停止
+              </button>
+            </div>
+            <div v-if="msgMap[id]" class="tip" style="width:100%;">{{ msgMap[id] }}</div>
+          </div>
+          <p style="font-size:12px;color:#64748b;margin-top:12px;">
+            ※ 状态以 WebSocket 推送为准，不以指令下发成功为准
+          </p>
+        </div>
+      </div>
+
+      <div class="status-bar">
+        <span><span class="dot-status" :class="wsConnected ? 'on' : 'off'"></span>WebSocket</span>
+        <span><span class="dot-status" :class="plcConnected ? 'on' : 'off'"></span>PLC</span>
+        <span>最后消息：{{ lastMsgTime }}</span>
+        <span>报警状态：{{ alarmLevelLow ? '低液位报警中' : '正常' }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 界面 1：3D 大屏 ============ -->
+  <div class="page" id="page-scene" v-show="currentPage === 'scene'">
+    <div id="canvas-wrap"></div>
+
+    <div class="topbar">
+      <div class="title">■ 设备 3D 可视化监控系统</div>
+      <div class="topbar-right">
+        <div class="status-lights">
+          <div class="light-item"><span class="dot on" id="light-run"></span>运行</div>
+          <div class="light-item"><span class="dot" id="light-warn"></span>预警</div>
+          <div class="light-item"><span class="dot" id="light-err"></span>故障</div>
+          <div class="light-item"><span class="dot on" id="light-net"></span>通信</div>
+        </div>
+        <button class="back-btn" @click="currentPage = 'pump'">← 返回泵房监控</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>控制面板</h3>
+      <div class="btn-row">
+        <button class="btn start active" id="btn-start">启动</button>
+        <button class="btn stop" id="btn-stop">停机</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn fill"  id="btn-fill">💧 注水</button>
+        <button class="btn drain" id="btn-drain">🚰 排水</button>
+      </div>
+      <div class="field">
+        <label>动画播放速度 <b id="spd-val">1.0x</b></label>
+        <input type="range" id="spd" min="0" max="3" step="0.1" value="1" />
+      </div>
+      <div class="field">
+        <label>电机转速 <b id="rpm-val">0 rpm</b></label>
+        <input type="range" id="rpm" min="0" max="3000" step="10" value="0" />
+      </div>
+    </div>
+
+    <div class="dashboard">
+      <div class="gauge" id="g-level-box">
+        <div class="name">液位高度</div>
+        <div class="val"><span id="d-level">0</span><small>%</small></div>
+        <div class="bar"><i id="b-level"></i></div>
+      </div>
+      <div class="gauge" id="g-rpm-box">
+        <div class="name">电机转速</div>
+        <div class="val"><span id="d-rpm">0</span><small>rpm</small></div>
+        <div class="bar"><i id="b-rpm"></i></div>
+      </div>
+      <div class="gauge" id="g-temp-box">
+        <div class="name">温度</div>
+        <div class="val"><span id="d-temp">25</span><small>℃</small></div>
+        <div class="bar"><i id="b-temp"></i></div>
+      </div>
+    </div>
+
+    <div class="views">
+      <button data-view="default" class="active">全景</button>
+      <button data-view="tank">液罐聚焦</button>
+      <button data-view="motor">电机聚焦</button>
+      <button data-view="top">俯视</button>
+    </div>
+
+    <div class="alarm-banner" id="alarm" style="display:none;">⚠ 液位超限报警！</div>
+  </div>
+
+  <!-- ============ 界面 3：数据面板 ============ -->
+  <div class="page" id="page-data" v-show="currentPage === 'data'">
+    <div class="container">
+      <div class="header">
+        <h1>📊 数据面板</h1>
+        <div class="mode-box">
+          <button class="back-btn" @click="currentPage = 'pump'">← 返回泵房监控</button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>历史曲线（过去 1 小时）</h2>
+          <div ref="chartLevelEl" class="chart-box"></div>
+          <div ref="chartPressureEl" class="chart-box"></div>
+          <p style="font-size:12px;color:#64748b;">※ 每 5 秒采样入库，按 1 分钟聚合</p>
+        </div>
+
+        <div class="card">
+          <h2>报警记录</h2>
+          <div class="alarm-list">
+            <div v-if="!alarmItems.length" class="empty">暂无报警记录</div>
+            <div v-for="a in alarmItems" :key="a.alarm_id" class="alarm-item" :class="a.status">
+              <div class="alarm-head">
+                <span class="alarm-id">{{ a.alarm_id }}</span>
+                <span class="alarm-tag" :class="'lv-' + a.level">{{ levelText(a.level) }}</span>
+                <span class="alarm-status" :class="a.status">{{ a.status === 'active' ? '进行中' : '已恢复' }}</span>
+              </div>
+              <div class="alarm-msg">{{ a.message }}</div>
+              <div class="alarm-time">{{ fmtTime(a.time_start) }}<template v-if="a.time_end"> → {{ fmtTime(a.time_end) }}</template></div>
+            </div>
+          </div>
+          <div class="pager" v-if="alarmTotal > alarmPageSize">
+            <button :disabled="alarmPage <= 1" @click="changeAlarmPage(-1)">上一页</button>
+            <span>{{ alarmPage }} / {{ Math.ceil(alarmTotal / alarmPageSize) }}</span>
+            <button :disabled="alarmPage * alarmPageSize >= alarmTotal" @click="changeAlarmPage(1)">下一页</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h2>设备讲解</h2>
+        <p class="sys-intro">{{ deviceData.system ? deviceData.system.intro : '加载中…' }}</p>
+        <div class="flow-steps">
+          <div v-for="f in (deviceData.system ? deviceData.system.flow : [])" :key="f.step" class="flow-step">
+            <b>{{ f.step }}. {{ f.name }}</b><span>{{ f.desc }}</span>
+          </div>
+        </div>
+        <div class="device-grid">
+          <div v-for="d in deviceData.devices" :key="d.id" class="device-card">
+            <div class="device-name">{{ d.name }}</div>
+            <span class="device-cat">{{ d.category }}</span>
+            <div class="device-desc">{{ d.desc }}</div>
+            <div v-if="d.sensor" class="device-sensor">
+              {{ d.sensor.name }}：{{ d.sensor.model }}（{{ d.sensor.brand }}，{{ d.sensor.range }}，{{ d.sensor.output }}）
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-wrap">
+    <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{ t.text }}</div>
+  </div>
+
+  <!-- Modal -->
+  <div v-if="showConfirm" class="modal-mask">
+    <div class="modal">
+      <p>确认切换为<b>{{ isAutoMode ? '手动' : '自动' }}</b>模式？<br>
+        切换后手动启停/调速将被屏蔽。</p>
+      <div class="btns">
+        <button @click="showConfirm = false">取消</button>
+        <button class="primary" @click="confirmModeSwitch">确认</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ================= Three.js 场景 ================= -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+/* ============ 场景 ============ */
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e17);
+scene.fog = new THREE.Fog(0x0a0e17, 25, 70);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(12, 9, 16);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+wrap.appendChild(renderer.domElement);
+
+/* ============ 光照 ============ */
+scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+scene.add(new THREE.HemisphereLight(0xaaccff, 0x334455, 1.2));
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+keyLight.position.set(10, 16, 8);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.left = -18; keyLight.shadow.camera.right = 18;
+keyLight.shadow.camera.top = 18;   keyLight.shadow.camera.bottom = -18;
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0x88bbff, 1.0);
+fillLight.position.set(-10, 8, -6);
+scene.add(fillLight);
+
+const rim = new THREE.PointLight(0x4fc3f7, 2.0, 50);
+rim.position.set(-8, 6, -8);
+scene.add(rim);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+const envScene = new THREE.Scene();
+envScene.add(new THREE.Mesh(
+  new THREE.SphereGeometry(50, 32, 32),
+  new THREE.MeshBasicMaterial({ color: 0x3a4a60, side: THREE.BackSide })
+));
+scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+
+/* ============ 地面 ============ */
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshStandardMaterial({ color:0x1a2235, roughness:0.85, metalness:0.15 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(60, 60, 0x2a4a6f, 0x1e3050);
+grid.position.y = 0.01;
+scene.add(grid);
+
+/* ============ 三维模型（加载 泵房.glb） ============ */
+let rotor1 = null, rotor2 = null;                 // 两台泵的叶轮转子（运行旋转动画）
+let liquidMesh = null, liquidTopMesh = null, liquidMat = null; // 水箱内液柱
+let tankInnerH = 3, tankBottomY = 0;              // 水箱内腔尺寸（模型加载后计算）
+
+const modelGroup = new THREE.Group();
+scene.add(modelGroup);
+
+const loader = new GLTFLoader();
+loader.load('./model.glb', (gltf) => {
+  const model = gltf.scene;
+  model.position.y = 0.02;      // 轻微抬高，避免自带的混凝土地面与底部网格 z-fighting
+  modelGroup.add(model);
+  setupModel(model);
+}, undefined, (err) => {
+  console.error('三维模型加载失败:', err);
+});
+
+/* 把某台泵的叶轮相关部件归组到一个绕 X 轴旋转的转子，用于"运行"动画 */
+function buildRotor(prefix, model) {
+  const hub = model.getObjectByName(prefix + '叶轮轮毂');
+  if (!hub) return null;
+  const pivot = hub.getWorldPosition(new THREE.Vector3());
+  const rotor = new THREE.Group();
+  rotor.position.copy(pivot);
+  modelGroup.add(rotor);
+
+  const names = [];
+  for (let i = 1; i <= 6; i++) names.push(prefix + '叶轮叶片' + i);
+  names.push(prefix + '叶轮轮毂', prefix + '泵轴', prefix + '联轴器');
+
+  const v = new THREE.Vector3();
+  names.forEach((n) => {
+    const node = model.getObjectByName(n);
+    if (!node) return;
+    node.getWorldPosition(v);
+    node.position.copy(v).sub(pivot);
+    rotor.add(node);
+  });
+  return rotor;
+}
+
+function setupModel(model) {
+  /* 泵叶轮旋转动画 */
+  rotor1 = buildRotor('水泵1', model);
+  rotor2 = buildRotor('水泵2', model);
+
+  /* 水箱液位：在箱体内生成一根液柱 */
+  const tankBody = model.getObjectByName('tank_body');
+  if (tankBody) {
+    const box = new THREE.Box3().setFromObject(tankBody);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    // 水体半径取箱体内径的 0.96：留一点缝免得和箱壁共面闪烁，
+    // 但也不能太细，否则低液位时那条水又薄又难认
+    const r = Math.max(size.x, size.z) / 2 * 0.96;
+    tankInnerH = size.y;
+    tankBottomY = box.min.y;
+
+    // 箱体改为半透明，才能看到内部液位（克隆材质，不影响其它共用不锈钢材质部件）
+    tankBody.material = tankBody.material.clone();
+    tankBody.material.transparent = true;
+    tankBody.material.opacity = 0.22;
+    tankBody.material.depthWrite = false;
+    tankBody.material.side = THREE.DoubleSide;
+    tankBody.material.metalness = 0.3;
+    tankBody.material.roughness = 0.2;
+    tankBody.material.emissive = new THREE.Color(0x000000);   // 低液位报警时闪红
+    tankBodyMesh = tankBody;
+
+    liquidMat = new THREE.MeshStandardMaterial({
+      color:0x0a84ff, emissive:0x0066cc, emissiveIntensity:1.0,
+      metalness:0.2, roughness:0.15
+    });
+    liquidMesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 48), liquidMat);
+    liquidMesh.position.set(center.x, tankBottomY + 0.5, center.z);
+    liquidMesh.castShadow = true;
+    modelGroup.add(liquidMesh);
+
+    // 水面那一圈是判断液位最直接的线索，做得比水体更亮、更白，
+    // 低液位时只剩底部一条水也能一眼看到"水位线"在哪
+    liquidTopMesh = new THREE.Mesh(
+      new THREE.CircleGeometry(r, 48),
+      new THREE.MeshStandardMaterial({
+        color:0xd6f4ff, emissive:0x66ddff, emissiveIntensity:1.6,
+        side:THREE.DoubleSide
+      })
+    );
+    liquidTopMesh.rotation.x = -Math.PI / 2;
+    liquidTopMesh.position.set(center.x, tankBottomY + 0.5, center.z);
+    modelGroup.add(liquidTopMesh);
+  }
+
+  /* 泵体：承载「运行 / 故障」的视觉反馈。
+     光靠叶轮转子转是不够的——泵轴和联轴器都是圆柱、绕自身轴转根本看不出来，
+     叶轮又藏在泵壳内部，所以必须给泵体一个肉眼可见的状态指示。
+     契约 03 第二节也明确要求 pump_0x_body「报警时材质变红闪烁」。 */
+  pumpBodies = ['pump_01_body', 'pump_02_body'].map((name) => {
+    const node = model.getObjectByName(name);
+    if (!node) return null;
+    node.material = node.material.clone();   // 克隆：泵体蓝也被其它零件共用，别一起改了
+    node.material.emissive = new THREE.Color(0x000000);
+    return node;
+  });
+
+  /* 根据模型实际包围盒调整相机与预设视角 */
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = (maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2))) * 1.6;
+  const dir = new THREE.Vector3(1, 0.55, 1).normalize();
+  camera.position.copy(center).addScaledVector(dir, dist);
+  camera.near = dist / 100;
+  camera.far = dist * 100;
+  camera.updateProjectionMatrix();
+  controls.target.copy(center);
+  controls.minDistance = maxDim * 0.3;
+  controls.maxDistance = maxDim * 4;
+
+  const tankNode = model.getObjectByName('tank_body');
+  const motorNode = model.getObjectByName('pump_01_motor');
+  const tp = tankNode ? tankNode.getWorldPosition(new THREE.Vector3()) : center;
+  const mp = motorNode ? motorNode.getWorldPosition(new THREE.Vector3()) : center;
+  VIEWS.default = { pos: camera.position.toArray(), target: center.toArray() };
+  VIEWS.tank    = { pos: [tp.x - 0.5, tp.y + 2.5, tp.z + 5], target: [tp.x, tp.y, tp.z] };
+  VIEWS.motor   = { pos: [mp.x, mp.y + 2.5, mp.z + 5], target: [mp.x, mp.y + 0.4, mp.z] };
+  VIEWS.top     = { pos: [center.x, center.y + maxDim * 1.2, center.z + 0.1], target: center.toArray() };
+}
+/* ============ 相机控制 ============ */
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 1.5, 0);
+controls.minDistance = 5;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI/2 - 0.05;
+
+/* ============ 视角 ============ */
+const VIEWS = {
+  default: { pos:[12, 9, 16],  target:[0, 1.5, 0] },
+  tank:    { pos:[-2, 4, 8],   target:[-2, 2.5, 0] },
+  motor:   { pos:[2.5, 4, 8],  target:[2.5, 1.4, 0] },
+  top:     { pos:[0, 18, 0.1], target:[0, 0, 0] }
+};
+let camAnim = null;
+function flyTo(k) {
+  const v = VIEWS[k];
+  if (!v) return;
+  camAnim = {
+    t: 0,
+    fromPos: camera.position.clone(),
+    toPos: new THREE.Vector3(...v.pos),
+    fromTar: controls.target.clone(),
+    toTar: new THREE.Vector3(...v.target)
+  };
+}
+document.querySelectorAll('.views button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.views button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    flyTo(btn.dataset.view);
+  };
+});
+
+/* ============ 状态 ============ */
+const state = {
+  running: false, speed: 1.0, rpm: 0,
+  level: 0, temp: 25, alarm: false, warn: false, flowing: 0
+};
+
+/* 后端实时数据映射（由 pullRealtime 每帧从 window.__pump 拉取） */
+let realPump1Run = false, realPump2Run = false;   // 两台泵是否运行
+let realRpm1 = 0, realRpm2 = 0;                   // 频率换算出的转速（rpm）
+let realPumpStatus = [0, 0];                      // 原始状态 0=停止 1=运行 2=故障
+let realLevelLow = false;                         // 低液位报警（3D 水箱要变红闪烁）
+let rpmDragging = false;                          // 是否正在拖动转速滑杆
+let lastRev = -1;                                 // 后端数据版本号，避免每帧重复刷 DOM
+
+/* 承载"运行/故障"视觉反馈的节点（模型加载后赋值） */
+let pumpBodies = [null, null];                    // pump_01_body / pump_02_body
+let tankBodyMesh = null;                          // tank_body
+
+/**
+ * 报警闪烁相位，约 1Hz 在 0~1 之间往复，用于"变红闪烁"的明暗交替。
+ *
+ * @returns {number} 0（最暗）到 1（最亮）之间的相位值。
+ */
+function blinkPhase() {
+  return 0.5 + 0.5 * Math.sin(performance.now() * 0.001 * Math.PI * 2);
+}
+
+/**
+ * 按实时状态给泵体与水箱着色。
+ *
+ * 停止 = 原本色；运行 = 绿色常亮；故障 = 红色闪烁。
+ * 「故障变红闪烁」是契约 03 第二节对 pump_0x_body 的硬性要求；
+ * 「运行显绿」是这里补的——叶轮转子那套动画在视觉上几乎看不出来
+ * （泵轴、联轴器是圆柱，绕自身轴转不可见；叶轮又藏在泵壳里），
+ * 没有颜色反馈就完全看不出水泵在不在转。
+ *
+ * @returns {void}
+ */
+function applyPumpVisuals() {
+  const blink = 0.25 + 0.75 * blinkPhase();
+
+  for (let i = 0; i < pumpBodies.length; i++) {
+    const body = pumpBodies[i];
+    if (!body) continue;
+    const status = realPumpStatus[i];
+    if (status === 2) {                  // 故障：红色闪烁
+      body.material.emissive.setHex(0xff1744);
+      body.material.emissiveIntensity = blink;
+    } else if (status === 1) {           // 运行：绿色常亮
+      body.material.emissive.setHex(0x00e676);
+      body.material.emissiveIntensity = 0.45;
+    } else {                             // 停止：不发光
+      body.material.emissive.setHex(0x000000);
+      body.material.emissiveIntensity = 0;
+    }
+  }
+
+  // 低液位报警时箱体一起闪红（验收清单：「3D 水箱变红闪烁」）
+  if (tankBodyMesh) {
+    tankBodyMesh.material.emissive.setHex(realLevelLow ? 0xff1744 : 0x000000);
+    tankBodyMesh.material.emissiveIntensity = realLevelLow ? blink * 0.8 : 0;
+  }
+}
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const animDelta = dt * state.speed;
+
+  pullRealtime();
+  syncConnState();
+
+  if (realPump1Run && rotor1) rotor1.rotation.x += (realRpm1 / 60) * Math.PI * 2 * animDelta;
+  if (realPump2Run && rotor2) rotor2.rotation.x += (realRpm2 / 60) * Math.PI * 2 * animDelta;
+
+  if (liquidMesh) {
+    const targetH = Math.max(0.02, state.level / 100 * (tankInnerH - 0.1));
+    liquidMesh.scale.y += (targetH - liquidMesh.scale.y) * Math.min(1, dt * 5);
+    liquidMesh.position.y = tankBottomY + liquidMesh.scale.y / 2;
+    if (liquidTopMesh) liquidTopMesh.position.y = tankBottomY + liquidMesh.scale.y;
+
+    if (realLevelLow) {
+      // 低液位报警：水体整根变红闪烁（验收清单：「3D 水箱变红闪烁」）
+      const k = 0.15 + 0.85 * blinkPhase();
+      liquidMat.color.setRGB(1.0, 0.15 * k, 0.2 * k);
+      liquidMat.emissive.setRGB(1.0 * k, 0.05 * k, 0.1 * k);
+      liquidMat.emissiveIntensity = 1.0;
+    } else {
+      // 水色固定，不随液位变。
+      // 原来写的是 hue = 0.55 - level/100*0.55，结果液位越低算出的色相越靠近青色，
+      // 而半透明箱壁在蓝光下渲染出来正好也是淡青色 —— 水排到低位就跟箱壁糊成一片，
+      // 视觉上"水位不见了"（实测踩过：排到 7% 时整箱看不出水）。
+      // 改成固定的高饱和蓝，跟淡青箱壁拉开对比，低液位时底部那条水也看得清。
+      liquidMat.color.setHex(0x0a84ff);
+      liquidMat.emissive.setHex(0x0066cc);
+      liquidMat.emissiveIntensity = 1.0;
+    }
+  }
+
+  applyPumpVisuals();
+
+  if (camAnim) {
+    camAnim.t = Math.min(1, camAnim.t + dt * 1.6);
+    const e = 1 - Math.pow(1 - camAnim.t, 3);
+    camera.position.lerpVectors(camAnim.fromPos, camAnim.toPos, e);
+    controls.target.lerpVectors(camAnim.fromTar, camAnim.toTar, e);
+    if (camAnim.t >= 1) camAnim = null;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+/* 注意：animate() 的调用放在本脚本最末尾，不能写在这里。
+   它内部会走 pullRealtime → applyData，而 applyData 用到 rpmEl / rpmVal / $
+   这几个 const，它们都声明在下面。在这之前调用会抛
+   ReferenceError（Cannot access 'xxx' before initialization），
+   而且异常会中断整个 module 脚本 —— 结果是按钮绑定、转子旋转、
+   液位更新、renderer.render 全都不再执行，画面完全静止。 */
+
+
+/* ============ 控制面板（对接后端 REST） ============ */
+const btnStart = document.getElementById('btn-start');
+const btnStop  = document.getElementById('btn-stop');
+const btnFill  = document.getElementById('btn-fill');
+const btnDrain = document.getElementById('btn-drain');
+const spdEl    = document.getElementById('spd');
+const spdVal   = document.getElementById('spd-val');
+const rpmEl    = document.getElementById('rpm');
+const rpmVal   = document.getElementById('rpm-val');
+
+const OPERATOR = '前端操作员';
+
+/* 下控：优先走 Vue 层暴露的 postControl（统一后端地址与错误码），否则兜底直接 fetch */
+async function postControl(body) {
+  const share = window.__pump;
+  let r;
+  if (share && typeof share.postControl === 'function') {
+    r = await share.postControl(body);
+  } else {
+    try {
+      const API = location.port === '8000' ? location.origin : 'http://127.0.0.1:8000';
+      const resp = await fetch(API + '/api/v1/control', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await resp.json();
+      r = (d && d.code === 0)
+        ? { ok: true, code: 0, msg: '指令已下发' }
+        : { ok: false, code: d && d.code, msg: (d && d.msg) || '下发失败' };
+    } catch (e) {
+      r = { ok: false, code: -1, msg: '无法连接后端服务' };
+    }
+  }
+  if (r && !r.ok && share && typeof share.toast === 'function') {
+    share.toast(r.msg, 'alarm', 3000);
+  }
+  return r;
+}
+
+/* 断开时置灰下控按钮（接口规范 5.3：断开后控制按钮禁用）
+   注水/排水是本地演示、不依赖后端，保持可点；只有下发后端指令的控件才禁用 */
+function syncConnState() {
+  const share = window.__pump;
+  const connected = !!(share && share.wsConnected && share.wsConnected.value);
+  ['btn-start', 'btn-stop', 'rpm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !connected;
+  });
+}
+
+function setRunning(run) {
+  state.running = run;
+  btnStart.classList.toggle('active', run);
+  btnStop.classList.toggle('active', !run);
+  document.getElementById('light-run').className = 'dot' + (run ? ' on' : '');
+}
+// 启动/停机 → 1# 主泵
+btnStart.onclick  = () => postControl({ device_id: 'pump_01', command: 'start', operator: OPERATOR });
+btnStop.onclick   = () => postControl({ device_id: 'pump_01', command: 'stop',  operator: OPERATOR });
+
+/* 注水/排水：本地演示液位涨落（后端无此指令，水箱液位由后端自动模拟） */
+let flowTimer = null;
+function stopFlow() {
+  state.flowing = 0;
+  btnFill.classList.remove('active');
+  btnDrain.classList.remove('active');
+  if (flowTimer) { clearInterval(flowTimer); flowTimer = null; }
+}
+function setFlow(dir) {
+  if (state.flowing === dir) { stopFlow(); return; }
+  stopFlow();
+  state.flowing = dir;
+  if (dir > 0) btnFill.classList.add('active');
+  else         btnDrain.classList.add('active');
+
+  flowTimer = setInterval(() => {
+    let v = state.level + dir * 2;
+    v = Math.max(0, Math.min(100, v));
+    state.level = v;
+    applyData({ level: v });
+    if (v <= 0 || v >= 100) stopFlow();
+  }, 200);
+}
+btnFill.onclick  = () => setFlow(+1);
+btnDrain.onclick = () => setFlow(-1);
+
+spdEl.oninput = e => {
+  state.speed = +e.target.value;
+  spdVal.textContent = state.speed.toFixed(1) + 'x';
+};
+// 转速滑杆：拖动时只改本地显示，松开(change)才下发 set_freq（后端同设备 2 秒限频）
+rpmEl.oninput = e => {
+  rpmDragging = true;
+  state.rpm = +e.target.value;
+  rpmVal.textContent = state.rpm + ' rpm';
+};
+rpmEl.onchange = () => {
+  rpmDragging = false;
+  const freq = Math.round((state.rpm / 3000) * 50 * 10) / 10;
+  postControl({ device_id: 'pump_01', command: 'set_freq', value: freq, operator: OPERATOR });
+};
+
+/* ============ 数据更新 ============ */
+const $ = id => document.getElementById(id);
+function applyData(d) {
+  if (d.rpm != null) {
+    state.rpm = d.rpm;
+    if (!rpmDragging) rpmEl.value = d.rpm;
+    rpmVal.textContent = d.rpm + ' rpm';
+  }
+  if (d.level != null) state.level = d.level;
+  if (d.temp  != null) state.temp  = d.temp;
+  if (d.running != null) setRunning(d.running);
+  if (d.alarm != null) state.alarm = d.alarm;
+  if (d.warn  != null) state.warn  = d.warn;
+
+  $('alarm').style.display = state.alarm ? 'block' : 'none';
+  $('light-warn').className = 'dot' + (state.warn ? ' warn' : '');
+  $('light-err').className  = 'dot' + (state.alarm ? ' err' : '');
+
+  $('d-level').textContent = state.level.toFixed(0);
+  $('b-level').style.width = state.level + '%';
+  $('d-rpm').textContent   = state.rpm;
+  $('b-rpm').style.width   = (state.rpm/3000*100) + '%';
+  $('d-temp').textContent  = state.temp.toFixed(1);
+  $('b-temp').style.width  = Math.min(100, state.temp) + '%';
+
+  $('g-level-box').classList.toggle('danger', state.level > 90);
+  $('g-temp-box').classList.toggle('danger', state.temp > 80);
+}
+
+/* 每帧从 Vue 层共享的真实数据里拉最新值（版本号变化才刷 DOM） */
+function pullRealtime() {
+  const share = window.__pump;
+  if (!share || !share.data || share.data.tank_level == null) return;
+  if (share.rev === lastRev) return;
+  lastRev = share.rev;
+  const d = share.data;
+
+  // 液位：后端 0~150cm → 3D 液柱 0~100%（本地注水/排水演示期间暂停覆盖）
+  if (!state.flowing) {
+    state.level = Math.max(0, Math.min(100, (d.tank_level / 150) * 100));
+  }
+
+  // 泵运行状态与转速：0~50Hz → 0~3000rpm
+  realPump1Run = d.pump_01_status === 1;
+  realPump2Run = d.pump_02_status === 1;
+  realRpm1 = Math.round((d.pump_01_freq || 0) / 50 * 3000);
+  realRpm2 = Math.round((d.pump_02_freq || 0) / 50 * 3000);
+  // 原始状态要留着：故障(2) 和 停止(0) 都表现为"不在转"，但 3D 上必须区分
+  realPumpStatus = [d.pump_01_status | 0, d.pump_02_status | 0];
+  realLevelLow = !!d.alarm_level_low;
+
+  // 面板/仪表显示 1# 主泵
+  state.running = realPump1Run;
+  state.rpm = realRpm1;
+  state.temp = (d.pump_01_temp != null) ? d.pump_01_temp : 25;
+
+  // 报警/预警：后端判定，前端只显示
+  const warn = !!(d.alarm_level_high || d.alarm_pressure_high);
+  const alarm = !!(d.alarm_active);
+  applyData({ level: state.level, rpm: state.rpm, temp: state.temp, running: state.running, alarm, warn });
+}
+
+applyData({ level: 0, rpm: 0, temp: 25 });
+
+/* ============ 自适应 ============ */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* 放到最后启动：此处所有 const 均已初始化，animate 首帧不会再抛 TDZ 错误 */
+animate();
+</script>
+
+<!-- ================= Vue UI 层 ================= -->
+<script>
+const { createApp, ref, reactive, computed, watch, nextTick } = Vue;
+
+/* ---- 后端接口地址（后端不修改，只在这里适配）----
+   后端默认绑定 127.0.0.1:8000；若本页由后端(8000端口)直接提供则走同源 */
+const API_BASE = location.port === '8000' ? location.origin : 'http://127.0.0.1:8000';
+const WS_URL   = API_BASE.replace(/^http/, 'ws') + '/ws/realtime';
+
+/* 错误码 → 中文提示（接口规范第七节：前端给用户看中文，不弹后端英文 msg） */
+const ERR_MSG = {
+  1001: '控制指令下发失败：设备通信超时，请重试',
+  1002: '控制指令下发失败：未知设备',
+  1003: '控制指令下发失败：未知指令',
+  1004: '控制指令下发失败：数值超出允许范围',
+  1005: '控制指令下发失败：请求参数不完整',
+  1006: '当前为自动模式，手动操作已被屏蔽',
+  1007: '该水泵处于故障状态，无法启动',
+  1008: '操作过于频繁，请稍后再试',
+  2001: '系统内部错误，请联系维护人员',
+  2002: '数据服务未就绪，请检查模拟器是否启动',
+};
+
+createApp({
+  setup() {
+    const currentPage = ref('pump');
+
+    const wsConnected  = ref(false);   // WebSocket 是否连上后端
+    const plcConnected = ref(false);   // 后端是否连上模拟器（PLC）
+    const lastMsgTime  = ref('—');
+    const tankLevel    = ref(0);       // cm（0~150）
+    const pipePressure = ref(0);       // MPa
+    const isAutoMode   = ref(false);   // sys_mode：0 手动 / 1 自动
+    const alarmLevelLow= ref(0);       // alarm_level_low
+    const alarmActive  = ref(0);       // 活跃报警数
+
+    const pumps = reactive({
+      pump_01: { status: 0, freq: 0, current: 0, temp: 0 },
+      pump_02: { status: 0, freq: 0, current: 0, temp: 0 },
+    });
+    const pumpIds = ['pump_01', 'pump_02'];
+
+    const todayKwh    = ref(0);        // 今日累计耗电量 kWh
+    const valveOpening= ref(0);        // 进水总阀开度 %
+    const flowSpeed   = ref(0);        // 出水主管流速 m/s
+
+    const loading = reactive({});
+    const msgMap  = reactive({});
+    const toasts  = ref([]);
+    const showConfirm = ref(false);
+
+    /* ---- 数据面板（历史曲线 / 报警记录 / 设备讲解） ---- */
+    const chartLevelEl    = ref(null);
+    const chartPressureEl = ref(null);
+    const deviceData = reactive({ system: null, devices: [], sensorsSummary: null });
+    const alarmItems   = ref([]);
+    const alarmTotal   = ref(0);
+    const alarmPage    = ref(1);
+    const alarmPageSize = 20;
+    let levelChart = null, pressureChart = null;
+
+    // 水箱液位百分比（后端 tank_level 0~150cm）
+    const tankPercent = computed(() => Math.min(100, (tankLevel.value / 150) * 100));
+
+    // 共享给 3D 大屏（module 脚本每帧读取 window.__pump 拿到真实数据）
+    window.__pump = {
+      data: {}, rev: 0,
+      postControl: null, toast: null,
+      wsConnected: wsConnected, plcConnected: plcConnected,
+    };
+
+    function pushToast(text, type = 'info', duration = 3500) {
+      const id = Date.now() + Math.random();
+      toasts.value.push({ id, text, type });
+      if (duration > 0) {
+        setTimeout(() => {
+          toasts.value = toasts.value.filter(t => t.id !== id);
+        }, duration);
+      }
+      return id;
+    }
+
+    function statusText(s) { return { 0: '已停止', 1: '运行中', 2: '故障' }[s]; }
+    function statusClass(s) { return { 0: 'st-stop', 1: 'st-run', 2: 'st-fault' }[s]; }
+
+    function canOperate(id) {
+      if (!wsConnected.value || !plcConnected.value) return false;
+      if (isAutoMode.value) return false;
+      if (pumps[id].status === 2) return false;
+      return true;
+    }
+
+    let audioCtx = null, osc = null;
+    function playAlarm() {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        osc = audioCtx.createOscillator();
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        osc.connect(audioCtx.destination);
+        osc.start();
+      } catch (e) {}
+    }
+    function stopAlarm() {
+      try { osc && osc.stop(); audioCtx && audioCtx.close(); } catch (e) {}
+      osc = null; audioCtx = null;
+    }
+
+    watch(alarmLevelLow, (val, old) => {
+      if (val === 1 && old !== 1) {
+        pushToast(`【警告】水箱液位过低（${tankLevel.value.toFixed(1)}cm）`, 'alarm', 0);
+        playAlarm();
+      } else if (old === 1 && val === 0) {
+        toasts.value = toasts.value.filter(t => t.type !== 'alarm');
+        stopAlarm();
+        pushToast('✓ 液位已恢复', 'recover', 3000);
+      }
+    });
+
+    /* ---- 实时数据落地（WebSocket 推送 + /status 快照共用） ---- */
+    function applyRealtime(payload) {
+      const d = (payload && payload.data) || {};
+      window.__pump.data = d;
+      window.__pump.rev = (window.__pump.rev || 0) + 1;
+
+      if (d.tank_level != null) tankLevel.value = d.tank_level;
+      if (d.pipe_pressure != null) pipePressure.value = d.pipe_pressure;
+      if (d.sys_mode != null) isAutoMode.value = d.sys_mode === 1;
+      if (d.alarm_level_low != null) alarmLevelLow.value = d.alarm_level_low;
+      if (d.alarm_active != null) alarmActive.value = d.alarm_active;
+      if (d.today_kwh != null) todayKwh.value = d.today_kwh;
+      if (d.valve_inlet_opening != null) valveOpening.value = d.valve_inlet_opening;
+      if (d.pipe_flow_speed != null) flowSpeed.value = d.pipe_flow_speed;
+
+      for (const id of pumpIds) {
+        const idx = id === 'pump_01' ? '1' : '2';
+        const p = pumps[id];
+        if (d['pump_0' + idx + '_status'] != null) p.status = d['pump_0' + idx + '_status'];
+        if (d['pump_0' + idx + '_freq'] != null) p.freq = d['pump_0' + idx + '_freq'];
+        if (d['pump_0' + idx + '_current'] != null) p.current = d['pump_0' + idx + '_current'];
+        if (d['pump_0' + idx + '_temp'] != null) p.temp = d['pump_0' + idx + '_temp'];
+      }
+      lastMsgTime.value = new Date().toLocaleTimeString();
+    }
+
+    /* ---- WebSocket 连接（断线 3 秒重连） ---- */
+    let ws = null, reconnectTimer = null, wsWatchdog = null;
+    function resetWatchdog() {
+      if (wsWatchdog) clearTimeout(wsWatchdog);
+      // 接口规范 5.3：15 秒内没收到任何消息（含心跳）判定断开
+      wsWatchdog = setTimeout(() => { try { ws.close(); } catch (e) {} }, 15000);
+    }
+    function connectWS() {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => { wsConnected.value = true; resetWatchdog(); };
+      ws.onmessage = (ev) => {
+        resetWatchdog();
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (msg.type === 'data') {
+          applyRealtime(msg);
+        } else if (msg.type === 'ping') {
+          try { ws.send(JSON.stringify({ type: 'pong' })); } catch (e) {}
+        } else if (msg.type === 'error') {
+          plcConnected.value = false;
+        }
+      };
+      ws.onclose = () => {
+        if (wsWatchdog) clearTimeout(wsWatchdog);
+        wsConnected.value = false;
+        scheduleReconnect();
+      };
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    }
+    function scheduleReconnect() {
+      if (reconnectTimer) return;
+      reconnectTimer = setTimeout(() => { reconnectTimer = null; connectWS(); }, 3000);
+    }
+    connectWS();
+
+    /* ---- 首屏快照 + 健康检查 ---- */
+    async function fetchHealth() {
+      try {
+        const h = await fetch(API_BASE + '/api/v1/health').then(r => r.json());
+        if (h && h.code === 0) plcConnected.value = !!h.plc_connected;
+      } catch (e) { /* 后端未启动 */ }
+    }
+    async function fetchStatus() {
+      try {
+        const s = await fetch(API_BASE + '/api/v1/status').then(r => r.json());
+        if (s && s.code === 0) applyRealtime({ data: s.data });
+        else plcConnected.value = false;
+      } catch (e) { /* 后端未启动 */ }
+    }
+    fetchStatus();
+    fetchHealth();
+    setInterval(fetchHealth, 5000);
+
+    /* ---- 控制指令（REST /api/v1/control） ---- */
+    async function sendControl(body) {
+      try {
+        const resp = await fetch(API_BASE + '/api/v1/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (data && data.code === 0) return { ok: true, code: 0, msg: '指令已下发' };
+        const code = data && data.code;
+        const raw = data && data.msg;
+        // 后端 main.py 返回中文 msg 直接用；否则按错误码映射中文（接口规范第七节）
+        return { ok: false, code: code, msg: (raw && /[一-龥]/.test(raw)) ? raw : (ERR_MSG[code] || ('错误码 ' + code)) };
+      } catch (e) {
+        return { ok: false, code: -1, msg: '无法连接后端服务' };
+      }
+    }
+    window.__pump.postControl = sendControl;
+    window.__pump.toast = pushToast;
+
+    async function onStart(id) {
+      loading[id] = true;
+      const r = await sendControl({ device_id: id, command: 'start', operator: '前端操作员' });
+      loading[id] = false;
+      if (!r.ok) {
+        msgMap[id] = r.msg;
+        setTimeout(() => (msgMap[id] = ''), 4000);
+      }
+    }
+    async function onStop(id) {
+      loading[id] = true;
+      const r = await sendControl({ device_id: id, command: 'stop', operator: '前端操作员' });
+      loading[id] = false;
+      if (!r.ok) {
+        msgMap[id] = r.msg;
+        setTimeout(() => (msgMap[id] = ''), 4000);
+      }
+    }
+
+    function askModeSwitch() { showConfirm.value = true; }
+    async function confirmModeSwitch() {
+      showConfirm.value = false;
+      const targetValue = isAutoMode.value ? 0 : 1;
+      const r = await sendControl({
+        device_id: 'sys', command: 'set_mode', value: targetValue, operator: '前端操作员',
+      });
+      if (!r.ok) pushToast(r.msg, 'alarm', 3000);
+    }
+
+    /* ---- 数据面板：历史曲线 / 报警记录 / 设备讲解 ---- */
+    function levelText(lv) { return { critical: '严重', warning: '预警' }[lv] || lv; }
+    function fmtTime(ts) {
+      if (!ts) return '';
+      return new Date(ts * 1000).toLocaleString('zh-CN', { hour12: false });
+    }
+    function initCharts() {
+      if (typeof echarts === 'undefined') return;
+      if (!levelChart && chartLevelEl.value) levelChart = echarts.init(chartLevelEl.value);
+      if (!pressureChart && chartPressureEl.value) pressureChart = echarts.init(chartPressureEl.value);
+    }
+    function lineOption(name, unit, color, points, max) {
+      return {
+        backgroundColor: 'transparent',
+        title: { text: name, left: 0, textStyle: { color: '#c8d6e5', fontSize: 13, fontWeight: 'normal' } },
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: '#1e293b', borderColor: '#334155',
+          textStyle: { color: '#e2e8f0', fontSize: 12 },
+          formatter: (ps) => {
+            const p = ps && ps[0]; if (!p) return '';
+            return `${new Date(p.value[0]).toLocaleTimeString('zh-CN', { hour12: false })}<br/>${p.seriesName}：<b>${p.value[1]} ${unit}</b>`;
+          },
+        },
+        grid: { left: 44, right: 12, top: 32, bottom: 26 },
+        xAxis: {
+          type: 'time',
+          axisLine: { lineStyle: { color: '#334155' } },
+          axisTick: { show: false },
+          axisLabel: { color: '#7d93b5', fontSize: 11, formatter: (v) => new Date(v).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: 'value', min: 0, max: max,
+          axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: '#7d93b5', fontSize: 11 },
+          splitLine: { lineStyle: { color: '#1e3a5f' } },
+        },
+        series: [{
+          name: name, type: 'line', data: points,
+          showSymbol: false, symbol: 'circle', symbolSize: 5,
+          lineStyle: { color: color, width: 2 },
+          itemStyle: { color: color },
+          areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color + '44' }, { offset: 1, color: color + '00' }]) },
+        }],
+      };
+    }
+    async function loadDevices() {
+      try {
+        const r = await fetch(API_BASE + '/api/v1/devices').then(res => res.json());
+        if (r && r.code === 0 && r.data) {
+          deviceData.system = r.data.system;
+          deviceData.devices = r.data.devices || [];
+          deviceData.sensorsSummary = r.data.sensorsSummary;
+        }
+      } catch (e) { /* 后端未启动 */ }
+    }
+    async function loadAlarms() {
+      try {
+        const r = await fetch(`${API_BASE}/api/v1/alarms?page=${alarmPage.value}&page_size=${alarmPageSize}`).then(res => res.json());
+        if (r && r.code === 0) {
+          alarmTotal.value = r.total;
+          alarmItems.value = r.items || [];
+        }
+      } catch (e) { /* 后端未启动 */ }
+    }
+    function changeAlarmPage(delta) {
+      const next = alarmPage.value + delta;
+      if (next < 1) return;
+      alarmPage.value = next;
+      loadAlarms();
+    }
+    async function loadHistory() {
+      const end = Math.floor(Date.now() / 1000);
+      const start = end - 3600;
+      try {
+        const r = await fetch(`${API_BASE}/api/v1/history?tags=tank_level,pipe_pressure&start=${start}&end=${end}&interval=1m`).then(res => res.json());
+        if (r && r.code === 0) renderHistory(r.series || {});
+      } catch (e) { /* 后端未启动 */ }
+    }
+    function renderHistory(series) {
+      initCharts();
+      if (levelChart) levelChart.setOption(lineOption('水箱液位', 'cm', '#4fc3f7', (series.tank_level || []).map(p => [p.t * 1000, p.v]), 150));
+      if (pressureChart) pressureChart.setOption(lineOption('出水压力', 'MPa', '#00e676', (series.pipe_pressure || []).map(p => [p.t * 1000, p.v]), 1));
+    }
+
+    watch(currentPage, (page) => {
+      if (page === 'data') {
+        nextTick(() => {
+          initCharts();
+          if (levelChart) levelChart.resize();
+          if (pressureChart) pressureChart.resize();
+          loadDevices();
+          loadAlarms();
+          loadHistory();
+        });
+      }
+    });
+    setInterval(() => {
+      if (currentPage.value === 'data') { loadHistory(); loadAlarms(); }
+    }, 30000);
+    addEventListener('resize', () => {
+      if (levelChart) levelChart.resize();
+      if (pressureChart) pressureChart.resize();
+    });
+
+    return {
+      currentPage,
+      wsConnected, plcConnected, lastMsgTime,
+      tankLevel, pipePressure, isAutoMode, alarmLevelLow, alarmActive,
+      pumps, pumpIds, loading, msgMap, toasts, showConfirm,
+      todayKwh, valveOpening, flowSpeed,
+      tankPercent, canOperate, statusText, statusClass,
+      onStart, onStop, askModeSwitch, confirmModeSwitch,
+      deviceData, alarmItems, alarmTotal, alarmPage, alarmPageSize,
+      chartLevelEl, chartPressureEl, levelText, fmtTime, changeAlarmPage,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
