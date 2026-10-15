@@ -35,7 +35,7 @@ EXCLUDE_FILES = {"data.db", "data.db-shm", "data.db-wal", ".DS_Store"}
 # 每个角色都拿到的：总排期、三压方案、示意图、README、入门说明
 COMMON = [
     "README.md",
-    "共享文档/14.第三轮7周总排期与里程碑_v1.0.docx",
+    "共享文档/14.第三轮7周总排期与里程碑_v1.1.docx",
     "共享文档/12.三压分区改造方案_v1.2.docx",
     "共享文档/09.泵房设备与数据链路示意图.html",
 ]
