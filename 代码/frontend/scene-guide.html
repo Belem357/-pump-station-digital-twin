@@ -510,7 +510,57 @@ const grid = new THREE.GridHelper(60, 60, 0x2a4a6f, 0x1e3050);
 grid.position.y = 0.01;
 scene.add(grid);
 
-/* ============ 三维模型（加载 泵房.glb） ============ */
+/* ============ 三维模型（参数全部来自 sceneConfig.json） ============
+   本段以下**不该再出现任何 GLB 节点名**——节点名、视角、配色一律读
+   同目录的 sceneConfig.json。换模型/改节点名只改那个 JSON，不用碰本文件。
+   FALLBACK_SCENE 是唯一例外：它只在 JSON 取不到（比如有人用 file:// 直接
+   打开本页）时兜底，保证不白屏。正常运行时永远走 JSON。 */
+let SCENE = null;
+
+const FALLBACK_SCENE = {
+  model: { url: '/model.glb', positionY: 0.02 },
+  camera: {
+    fov: 45, background: '#0a0e17', fog: { near: 25, far: 70 },
+    fitFactor: 1.6, initialDirection: [1, 0.55, 1],
+    minDistanceFactor: 0.3, maxDistanceFactor: 4
+  },
+  views: [
+    { key: 'default', label: '全景', auto: true },
+    { key: 'tank', label: '液罐聚焦', focus: 'tank_body', offset: [-0.5, 2.5, 5], targetYOffset: 0 },
+    { key: 'motor', label: '电机聚焦', focus: 'pump_01_motor', offset: [0, 2.5, 5], targetYOffset: 0.4 },
+    { key: 'top', label: '俯视', topDown: true, heightFactor: 1.2 }
+  ],
+  statusVisual: {
+    0: { emissive: '#000000', intensity: 0, blink: false },
+    1: { emissive: '#00e676', intensity: 0.45, blink: false },
+    2: { emissive: '#ff1744', intensity: 0.25, blink: true },
+    blinkHz: 1, faultColor: '#ff1744'
+  },
+  tank: {
+    bodyNode: 'tank_body', surfaceNode: 'tank_water_surface', levelMaxCm: 150,
+    waterRadiusRatio: 0.96, bodyOpacity: 0.22,
+    waterColor: '#0a84ff', waterEmissive: '#0066cc',
+    surfaceColor: '#d6f4ff', surfaceEmissive: '#66ddff'
+  },
+  pumps: [
+    {
+      deviceId: 'pump_01', label: '1#泵', statusNode: 'pump_01_body',
+      rotorHub: '水泵1叶轮轮毂',
+      rotorBlades: ['水泵1叶轮叶片1', '水泵1叶轮叶片2', '水泵1叶轮叶片3',
+        '水泵1叶轮叶片4', '水泵1叶轮叶片5', '水泵1叶轮叶片6'],
+      rotorShaft: ['水泵1泵轴', '水泵1联轴器']
+    },
+    {
+      deviceId: 'pump_02', label: '2#泵', statusNode: 'pump_02_body',
+      rotorHub: '水泵2叶轮轮毂',
+      rotorBlades: ['水泵2叶轮叶片1', '水泵2叶轮叶片2', '水泵2叶轮叶片3',
+        '水泵2叶轮叶片4', '水泵2叶轮叶片5', '水泵2叶轮叶片6'],
+      rotorShaft: ['水泵2泵轴', '水泵2联轴器']
+    }
+  ],
+  hotspots: []
+};
+
 let rotor1 = null, rotor2 = null;                 // 两台泵的叶轮转子（运行旋转动画）
 let liquidMesh = null, liquidTopMesh = null, liquidMat = null; // 水箱内液柱
 let tankInnerH = 3, tankBottomY = 0;              // 水箱内腔尺寸（模型加载后计算）
@@ -519,27 +569,79 @@ const modelGroup = new THREE.Group();
 scene.add(modelGroup);
 
 const loader = new GLTFLoader();
-loader.load('./model.glb', (gltf) => {
-  const model = gltf.scene;
-  model.position.y = 0.02;      // 轻微抬高，避免自带的混凝土地面与底部网格 z-fighting
-  modelGroup.add(model);
-  setupModel(model);
-}, undefined, (err) => {
-  console.error('三维模型加载失败:', err);
-});
 
-/* 把某台泵的叶轮相关部件归组到一个绕 X 轴旋转的转子，用于"运行"动画 */
-function buildRotor(prefix, model) {
-  const hub = model.getObjectByName(prefix + '叶轮轮毂');
+/**
+ * 取回 3D 场景配置。
+ *
+ * 配置与页面同目录，由后端静态挂载一起发出来，所以相对路径就够。
+ * cache: 'no-cache' 是故意的——改完 JSON 刷新页面要立刻生效，别被浏览器缓存挡住。
+ *
+ * @returns {Promise<object|null>} 配置对象；取不到时返回 null，由调用方决定退路。
+ */
+async function fetchSceneConfig() {
+  try {
+    const resp = await fetch('./sceneConfig.json', { cache: 'no-cache' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return await resp.json();
+  } catch (err) {
+    console.error('sceneConfig.json 读取失败，退回内置兜底配置:', err);
+    return null;
+  }
+}
+
+/**
+ * 把配置里的相机与环境参数应用到场景上。
+ *
+ * 只管不依赖模型几何的那部分；取景距离要等包围盒算出来，在 setupModel 里做。
+ *
+ * @returns {void}
+ */
+function applyCameraConfig() {
+  scene.background = new THREE.Color(SCENE.camera.background);
+  scene.fog = new THREE.Fog(SCENE.camera.background, SCENE.camera.fog.near, SCENE.camera.fog.far);
+  camera.fov = SCENE.camera.fov;
+  camera.updateProjectionMatrix();
+}
+
+/**
+ * 启动 3D：先取场景配置，再按配置加载模型。
+ *
+ * 顺序不能反——节点名和模型路径都在配置里，配置没到就没法加载模型。
+ *
+ * @returns {Promise<void>}
+ */
+async function bootstrapScene() {
+  SCENE = (await fetchSceneConfig()) || FALLBACK_SCENE;
+  applyCameraConfig();
+  loader.load(SCENE.model.url, (gltf) => {
+    const model = gltf.scene;
+    model.position.y = SCENE.model.positionY;   // 轻微抬高，避免自带的混凝土地面与底部网格 z-fighting
+    modelGroup.add(model);
+    setupModel(model);
+  }, undefined, (err) => {
+    console.error('三维模型加载失败:', err);
+  });
+}
+
+/**
+ * 把某台泵的叶轮相关部件归组到一个绕 X 轴旋转的转子，用于"运行"动画。
+ *
+ * 哪些零件算"转子"由配置给（rotorHub / rotorBlades / rotorShaft），
+ * 因为不同模型的叶片数、零件命名都不一样，写死在代码里就绑死模型了。
+ *
+ * @param {object} pumpCfg 配置里该泵的一项（见 sceneConfig.json 的 pumps 数组）。
+ * @param {THREE.Object3D} model 已加载的模型根节点。
+ * @returns {THREE.Group|null} 转子组；配置里找不到轮毂时返回 null。
+ */
+function buildRotor(pumpCfg, model) {
+  const hub = model.getObjectByName(pumpCfg.rotorHub);
   if (!hub) return null;
   const pivot = hub.getWorldPosition(new THREE.Vector3());
   const rotor = new THREE.Group();
   rotor.position.copy(pivot);
   modelGroup.add(rotor);
 
-  const names = [];
-  for (let i = 1; i <= 6; i++) names.push(prefix + '叶轮叶片' + i);
-  names.push(prefix + '叶轮轮毂', prefix + '泵轴', prefix + '联轴器');
+  const names = [pumpCfg.rotorHub, ...pumpCfg.rotorBlades, ...pumpCfg.rotorShaft];
 
   const v = new THREE.Vector3();
   names.forEach((n) => {
@@ -552,27 +654,36 @@ function buildRotor(prefix, model) {
   return rotor;
 }
 
+/**
+ * 模型加载完成后做三件事：建转子、建水箱液柱、按包围盒定相机与预设视角。
+ *
+ * 所有节点名都从 SCENE（sceneConfig.json）取，本函数不含任何硬编码节点名。
+ *
+ * @param {THREE.Object3D} model 已加载的模型根节点。
+ * @returns {void}
+ */
 function setupModel(model) {
   /* 泵叶轮旋转动画 */
-  rotor1 = buildRotor('水泵1', model);
-  rotor2 = buildRotor('水泵2', model);
+  rotor1 = SCENE.pumps[0] ? buildRotor(SCENE.pumps[0], model) : null;
+  rotor2 = SCENE.pumps[1] ? buildRotor(SCENE.pumps[1], model) : null;
 
   /* 水箱液位：在箱体内生成一根液柱 */
-  const tankBody = model.getObjectByName('tank_body');
+  const tankCfg = SCENE.tank;
+  const tankBody = model.getObjectByName(tankCfg.bodyNode);
   if (tankBody) {
     const box = new THREE.Box3().setFromObject(tankBody);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
     // 水体半径取箱体内径的 0.96：留一点缝免得和箱壁共面闪烁，
     // 但也不能太细，否则低液位时那条水又薄又难认
-    const r = Math.max(size.x, size.z) / 2 * 0.96;
+    const r = Math.max(size.x, size.z) / 2 * tankCfg.waterRadiusRatio;
     tankInnerH = size.y;
     tankBottomY = box.min.y;
 
     // 箱体改为半透明，才能看到内部液位（克隆材质，不影响其它共用不锈钢材质部件）
     tankBody.material = tankBody.material.clone();
     tankBody.material.transparent = true;
-    tankBody.material.opacity = 0.22;
+    tankBody.material.opacity = tankCfg.bodyOpacity;
     tankBody.material.depthWrite = false;
     tankBody.material.side = THREE.DoubleSide;
     tankBody.material.metalness = 0.3;
@@ -581,8 +692,9 @@ function setupModel(model) {
     tankBodyMesh = tankBody;
 
     liquidMat = new THREE.MeshStandardMaterial({
-      color:0x0a84ff, emissive:0x0066cc, emissiveIntensity:1.0,
-      metalness:0.2, roughness:0.15
+      color: new THREE.Color(tankCfg.waterColor),
+      emissive: new THREE.Color(tankCfg.waterEmissive),
+      emissiveIntensity: 1.0, metalness:0.2, roughness:0.15
     });
     liquidMesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 48), liquidMat);
     liquidMesh.position.set(center.x, tankBottomY + 0.5, center.z);
@@ -594,8 +706,9 @@ function setupModel(model) {
     liquidTopMesh = new THREE.Mesh(
       new THREE.CircleGeometry(r, 48),
       new THREE.MeshStandardMaterial({
-        color:0xd6f4ff, emissive:0x66ddff, emissiveIntensity:1.6,
-        side:THREE.DoubleSide
+        color: new THREE.Color(tankCfg.surfaceColor),
+        emissive: new THREE.Color(tankCfg.surfaceEmissive),
+        emissiveIntensity:1.6, side:THREE.DoubleSide
       })
     );
     liquidTopMesh.rotation.x = -Math.PI / 2;
@@ -607,8 +720,8 @@ function setupModel(model) {
      光靠叶轮转子转是不够的——泵轴和联轴器都是圆柱、绕自身轴转根本看不出来，
      叶轮又藏在泵壳内部，所以必须给泵体一个肉眼可见的状态指示。
      契约 03 第二节也明确要求 pump_0x_body「报警时材质变红闪烁」。 */
-  pumpBodies = ['pump_01_body', 'pump_02_body'].map((name) => {
-    const node = model.getObjectByName(name);
+  pumpBodies = SCENE.pumps.map((p) => {
+    const node = model.getObjectByName(p.statusNode);
     if (!node) return null;
     node.material = node.material.clone();   // 克隆：泵体蓝也被其它零件共用，别一起改了
     node.material.emissive = new THREE.Color(0x000000);
@@ -620,24 +733,36 @@ function setupModel(model) {
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z);
-  const dist = (maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2))) * 1.6;
-  const dir = new THREE.Vector3(1, 0.55, 1).normalize();
+  const camCfg = SCENE.camera;
+  const dist = (maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2))) * camCfg.fitFactor;
+  const dir = new THREE.Vector3(...camCfg.initialDirection).normalize();
   camera.position.copy(center).addScaledVector(dir, dist);
   camera.near = dist / 100;
   camera.far = dist * 100;
   camera.updateProjectionMatrix();
   controls.target.copy(center);
-  controls.minDistance = maxDim * 0.3;
-  controls.maxDistance = maxDim * 4;
+  controls.minDistance = maxDim * camCfg.minDistanceFactor;
+  controls.maxDistance = maxDim * camCfg.maxDistanceFactor;
 
-  const tankNode = model.getObjectByName('tank_body');
-  const motorNode = model.getObjectByName('pump_01_motor');
-  const tp = tankNode ? tankNode.getWorldPosition(new THREE.Vector3()) : center;
-  const mp = motorNode ? motorNode.getWorldPosition(new THREE.Vector3()) : center;
+  /* 预设视角：除了俯视，其余都是「盯住某个节点、再按 offset 退开」，
+     所以换模型、挪设备位置都不用改坐标——只要那个节点还在，视角就还准。 */
   VIEWS.default = { pos: camera.position.toArray(), target: center.toArray() };
-  VIEWS.tank    = { pos: [tp.x - 0.5, tp.y + 2.5, tp.z + 5], target: [tp.x, tp.y, tp.z] };
-  VIEWS.motor   = { pos: [mp.x, mp.y + 2.5, mp.z + 5], target: [mp.x, mp.y + 0.4, mp.z] };
-  VIEWS.top     = { pos: [center.x, center.y + maxDim * 1.2, center.z + 0.1], target: center.toArray() };
+  SCENE.views.filter((v) => v.focus).forEach((v) => {
+    const node = model.getObjectByName(v.focus);
+    const p = node ? node.getWorldPosition(new THREE.Vector3()) : center;
+    const [ox, oy, oz] = v.offset;
+    VIEWS[v.key] = {
+      pos: [p.x + ox, p.y + oy, p.z + oz],
+      target: [p.x, p.y + (v.targetYOffset || 0), p.z]
+    };
+  });
+  const topView = SCENE.views.find((v) => v.topDown);
+  if (topView) {
+    VIEWS.top = {
+      pos: [center.x, center.y + maxDim * topView.heightFactor, center.z + 0.1],
+      target: center.toArray()
+    };
+  }
 }
 /* ============ 相机控制 ============ */
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -699,7 +824,8 @@ let tankBodyMesh = null;                          // tank_body
  * @returns {number} 0（最暗）到 1（最亮）之间的相位值。
  */
 function blinkPhase() {
-  return 0.5 + 0.5 * Math.sin(performance.now() * 0.001 * Math.PI * 2);
+  const hz = (SCENE && SCENE.statusVisual && SCENE.statusVisual.blinkHz) || 1;
+  return 0.5 + 0.5 * Math.sin(performance.now() * 0.001 * Math.PI * 2 * hz);
 }
 
 /**
@@ -714,27 +840,22 @@ function blinkPhase() {
  * @returns {void}
  */
 function applyPumpVisuals() {
+  if (!SCENE) return;                     // 启动的头一两帧配置还没到，先不画
+  const sv = SCENE.statusVisual;
   const blink = 0.25 + 0.75 * blinkPhase();
 
   for (let i = 0; i < pumpBodies.length; i++) {
     const body = pumpBodies[i];
     if (!body) continue;
-    const status = realPumpStatus[i];
-    if (status === 2) {                  // 故障：红色闪烁
-      body.material.emissive.setHex(0xff1744);
-      body.material.emissiveIntensity = blink;
-    } else if (status === 1) {           // 运行：绿色常亮
-      body.material.emissive.setHex(0x00e676);
-      body.material.emissiveIntensity = 0.45;
-    } else {                             // 停止：不发光
-      body.material.emissive.setHex(0x000000);
-      body.material.emissiveIntensity = 0;
-    }
+    // 颜色与强度都来自配置：0=停止 1=运行 2=故障
+    const cfg = sv[String(realPumpStatus[i])] || sv['0'];
+    body.material.emissive.set(cfg.emissive);
+    body.material.emissiveIntensity = cfg.blink ? cfg.intensity * blink : cfg.intensity;
   }
 
   // 低液位报警时箱体一起闪红（验收清单：「3D 水箱变红闪烁」）
   if (tankBodyMesh) {
-    tankBodyMesh.material.emissive.setHex(realLevelLow ? 0xff1744 : 0x000000);
+    tankBodyMesh.material.emissive.set(realLevelLow ? sv.faultColor : '#000000');
     tankBodyMesh.material.emissiveIntensity = realLevelLow ? blink * 0.8 : 0;
   }
 }
@@ -769,8 +890,8 @@ function animate() {
       // 而半透明箱壁在蓝光下渲染出来正好也是淡青色 —— 水排到低位就跟箱壁糊成一片，
       // 视觉上"水位不见了"（实测踩过：排到 7% 时整箱看不出水）。
       // 改成固定的高饱和蓝，跟淡青箱壁拉开对比，低液位时底部那条水也看得清。
-      liquidMat.color.setHex(0x0a84ff);
-      liquidMat.emissive.setHex(0x0066cc);
+      liquidMat.color.set(SCENE.tank.waterColor);
+      liquidMat.emissive.set(SCENE.tank.waterEmissive);
       liquidMat.emissiveIntensity = 1.0;
     }
   }
@@ -935,9 +1056,11 @@ function pullRealtime() {
   lastRev = share.rev;
   const d = share.data;
 
-  // 液位：后端 0~150cm → 3D 液柱 0~100%（本地注水/排水演示期间暂停覆盖）
+  // 液位：后端 cm → 3D 液柱 0~100%（本地注水/排水演示期间暂停覆盖）
+  // 量程上限取配置（sceneConfig.json 的 tank.levelMaxCm），换水箱不用改代码
   if (!state.flowing) {
-    state.level = Math.max(0, Math.min(100, (d.tank_level / 150) * 100));
+    const maxCm = (SCENE && SCENE.tank && SCENE.tank.levelMaxCm) || 150;
+    state.level = Math.max(0, Math.min(100, (d.tank_level / maxCm) * 100));
   }
 
   // 泵运行状态与转速：0~50Hz → 0~3000rpm
@@ -970,6 +1093,7 @@ addEventListener('resize', () => {
 });
 
 /* 放到最后启动：此处所有 const 均已初始化，animate 首帧不会再抛 TDZ 错误 */
+bootstrapScene();   // 先取 sceneConfig.json，再把模型按配置装上去
 animate();
 </script>
 

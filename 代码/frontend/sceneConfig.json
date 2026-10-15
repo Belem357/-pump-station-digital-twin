@@ -1,0 +1,133 @@
+{
+  "_说明": "3D 场景配置 —— 前端对 泵房.glb 的**全部**依赖都收在这一个文件里：模型路径、节点名、预设视角、状态配色、动画零件。scene.html 里不再硬编码任何一个 GLB 节点名。",
+  "_用法": "scene.html 启动时 fetch('./sceneConfig.json')。换模型、改节点名、调视角、改配色，只改本文件，不用碰代码。",
+  "_与 devices.json 的关系": "devices.json 讲的是「这台设备是什么、装了什么传感器」（讲解口径）；本文件讲的是「这台设备在 3D 里由哪些节点构成」（建模口径）。两者靠 deviceId ↔ id 关联。改完请跑 `node _工具/validateScene.mjs` 校验：JSON 里的节点名必须真的在 GLB 里存在。",
+  "_改节点名的流程": "① 在 Blender 里改 ② 重导出 泵房.glb 覆盖仓库根同名文件 ③ 改本文件 ④ 跑 validateScene.mjs ⑤ 才能提交",
+
+  "model": {
+    "url": "/model.glb",
+    "positionY": 0.02,
+    "_note": "url 走后端 main.py 的 /model.glb 路由（源文件是仓库根的 泵房.glb）。前端不用 file:// 直接打开，否则拿不到模型也拿不到本 JSON。"
+  },
+
+  "camera": {
+    "fov": 45,
+    "background": "#0a0e17",
+    "fog": { "near": 25, "far": 70 },
+    "_fitFactor_note": "相机自动取景的松紧：模型包围盒外接球 × 这个倍数 = 相机距离。调大＝离得远",
+    "fitFactor": 1.6,
+    "initialDirection": [1, 0.55, 1],
+    "minDistanceFactor": 0.3,
+    "maxDistanceFactor": 4
+  },
+
+  "views": [
+    {
+      "key": "default",
+      "label": "全景",
+      "auto": true,
+      "_note": "auto = 按模型包围盒自动取景，不写死坐标，换模型也不会跑偏"
+    },
+    {
+      "key": "tank",
+      "label": "液罐聚焦",
+      "focus": "tank_body",
+      "offset": [-0.5, 2.5, 5],
+      "targetYOffset": 0
+    },
+    {
+      "key": "motor",
+      "label": "电机聚焦",
+      "focus": "pump_01_motor",
+      "offset": [0, 2.5, 5],
+      "targetYOffset": 0.4
+    },
+    {
+      "key": "top",
+      "label": "俯视",
+      "topDown": true,
+      "_heightFactor_note": "俯视高度 = 模型最大边长 × 这个倍数",
+      "heightFactor": 1.2
+    }
+  ],
+
+  "statusVisual": {
+    "_说明": "按后端推的 pump_0x_status 给泵体着色。键就是状态值：0=停止 1=运行 2=故障。",
+    "_依据": "《03 接口规范》第二节要求 pump_0x_body 报警时材质变红闪烁；运行显绿是本项目补的（叶轮藏在泵壳里，不靠颜色根本看不出在转）",
+    "0": { "emissive": "#000000", "intensity": 0, "blink": false },
+    "1": { "emissive": "#00e676", "intensity": 0.45, "blink": false },
+    "2": { "emissive": "#ff1744", "intensity": 0.25, "blink": true },
+    "blinkHz": 1,
+    "faultColor": "#ff1744"
+  },
+
+  "tank": {
+    "_说明": "水箱液位可视化。液柱不是模型里的零件，是前端按包围盒现生成的圆柱，所以这些参数比节点名更要紧。",
+    "bodyNode": "tank_body",
+    "surfaceNode": "tank_water_surface",
+    "levelMaxCm": 150,
+    "waterRadiusRatio": 0.96,
+    "_radius_note": "液柱半径 = 箱体长宽较大者的一半 × 此系数。取 0.96 是留缝防共面闪烁，又不能让水太细——低液位时太细就看不出有水",
+    "bodyOpacity": 0.22,
+    "waterColor": "#0a84ff",
+    "waterEmissive": "#0066cc",
+    "surfaceColor": "#d6f4ff",
+    "surfaceEmissive": "#66ddff"
+  },
+
+  "pumps": [
+    {
+      "deviceId": "pump_01",
+      "label": "1#泵",
+      "statusNode": "pump_01_body",
+      "_statusNode_note": "承载「运行/故障」着色的节点，一般是泵体；不要填电机，电机材质是共用的，染色会连带其它零件",
+      "rotorHub": "水泵1叶轮轮毂",
+      "rotorBlades": [
+        "水泵1叶轮叶片1", "水泵1叶轮叶片2", "水泵1叶轮叶片3",
+        "水泵1叶轮叶片4", "水泵1叶轮叶片5", "水泵1叶轮叶片6"
+      ],
+      "rotorShaft": ["水泵1泵轴", "水泵1联轴器"]
+    },
+    {
+      "deviceId": "pump_02",
+      "label": "2#泵",
+      "statusNode": "pump_02_body",
+      "rotorHub": "水泵2叶轮轮毂",
+      "rotorBlades": [
+        "水泵2叶轮叶片1", "水泵2叶轮叶片2", "水泵2叶轮叶片3",
+        "水泵2叶轮叶片4", "水泵2叶轮叶片5", "水泵2叶轮叶片6"
+      ],
+      "rotorShaft": ["水泵2泵轴", "水泵2联轴器"]
+    }
+  ],
+
+  "hotspots": [
+    {
+      "_说明": "点 3D 弹讲解卡片用（第二轮任务书 B2）。一个设备可以挂多个节点——点电机壳和点泵体都应该弹同一张卡，不要各弹各的。前端目前尚未接上，先把映射定下来。",
+      "deviceId": "tank",
+      "nodes": ["tank_body", "tank_water_surface", "水箱液位计", "水箱进水管", "水箱出水短管"]
+    },
+    {
+      "deviceId": "pump_01",
+      "nodes": ["pump_01_motor", "pump_01_body", "水泵1进口法兰", "水泵1出口立管", "水泵1底座", "水泵1接线盒", "水泵1风扇罩"]
+    },
+    {
+      "deviceId": "pump_02",
+      "nodes": ["pump_02_motor", "pump_02_body", "水泵2进口法兰", "水泵2出口立管", "水泵2底座", "水泵2接线盒", "水泵2风扇罩"]
+    },
+    {
+      "deviceId": "valve_inlet",
+      "nodes": ["valve_inlet", "进水手轮", "进水阀杆", "进水阀体"]
+    },
+    {
+      "deviceId": "pipe_main_out",
+      "_note": "压力变送器没单独建模，挂在出水总管上。机械表的表盘/表颈一并算作本设备的热区——机械表与变送器在实机上是并存的（机械表供现场巡检、变送器供系统采集）",
+      "nodes": ["pipe_main_out", "压力表表盘", "压力表表颈", "出水阀体", "出水阀杆", "出水手轮"]
+    },
+    {
+      "deviceId": "cabinet",
+      "_note": "devices.json 里没有 cabinet 这条设备（讲解卡片暂未收录控制柜），节点先备着",
+      "nodes": ["控制柜柜体", "控制柜柜门", "控制柜显示屏", "控制柜指示灯1", "控制柜指示灯2", "控制柜指示灯3"]
+    }
+  ]
+}
